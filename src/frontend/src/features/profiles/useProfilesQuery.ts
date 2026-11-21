@@ -902,6 +902,87 @@ function collectionCaches(
   return hits;
 }
 
+/** t101: a per-profile high-water mark of observed state revisions,
+ * keyed by QueryClient so separate mounts and tests stay isolated. The
+ * mark survives cache invalidations, so a profile whose rows were
+ * evicted still suppresses events older than a revision we already
+ * saw. */
+const seenRevisionByClient = new WeakMap<QueryClient, Map<string, number>>();
+
+function recordSeenRevision(
+  queryClient: QueryClient,
+  profileId: string,
+  revision: number,
+): void {
+  let byProfile = seenRevisionByClient.get(queryClient);
+  if (!byProfile) {
+    byProfile = new Map();
+    seenRevisionByClient.set(queryClient, byProfile);
+  }
+  const seen = byProfile.get(profileId);
+  if (seen == null || revision > seen) byProfile.set(profileId, revision);
+}
+
+interface RevisionWitness {
+  maxRevision: number | null;
+  duplicate: boolean;
+}
+
+/** t101: the unified witness for whether an event is history or a
+ * replay. The highest revision known for a profile is aggregated from
+ * the runtime cache, every collection row and the persistent watermark;
+ * no single cache needs to be populated (f003). A replay counts as a
+ * duplicate only when a known projection at the same revision matches
+ * the event payload (the "same revision, same state" case). */
+function revisionWitness(
+  queryClient: QueryClient,
+  event: ProfileRuntimeStatusEvent,
+): RevisionWitness {
+  const eventRevision = event.state_revision ?? 0;
+  const fromEvent = projectionFromEvent(event);
+  let maxRevision =
+    seenRevisionByClient.get(queryClient)?.get(event.profile_id) ?? null;
+  let duplicate = false;
+  const consider = (row: ProfileRuntimeProjection): void => {
+    const revision = row.state_revision;
+    if (revision == null) return;
+    if (maxRevision == null || revision > maxRevision) {
+      maxRevision = revision;
+      duplicate = false;
+    }
+    if (revision === eventRevision && projectionsEqual(row, fromEvent)) {
+      duplicate = true;
+    }
+  };
+  const runtime = queryClient.getQueryData<ProfileRuntimeResponse>(
+    profileKeys.runtime(event.profile_id),
+  );
+  if (runtime) {
+    consider({
+      desired_state: runtime.desired_state,
+      observed_state: runtime.observed_state,
+      config_version: runtime.config_version,
+      state_revision: runtime.state_revision,
+      runtime_instance_id: runtime.runtime_instance_id,
+      failure_count: runtime.failure_count,
+      restart_blocked: runtime.restart_blocked,
+      last_started_at: runtime.last_started_at,
+      last_stopped_at: runtime.last_stopped_at,
+      preview_captured_at: runtime.preview_captured_at,
+      last_coordinator_error: runtime.last_coordinator_error,
+      updated_at: runtime.updated_at,
+    });
+  }
+  for (const hit of collectionCaches(queryClient)) {
+    for (const item of hit.items) {
+      if (item.id === event.profile_id && item.runtime) {
+        consider(item.runtime);
+      }
+    }
+  }
+  return { maxRevision, duplicate };
+}
+
 function writeCollectionCache(
   queryClient: QueryClient,
   hit: CollectionCacheHit,
@@ -961,7 +1042,14 @@ export function applyRuntimeEventToCollections(
       hit.params.status,
       nextRuntime.observed_state,
     );
-    if (wasIn !== isIn && !options.suppressInvalidation) {
+    if (wasIn !== isIn) {
+      // t101 (f004): when the event is history/replay its side effects
+      // are suppressed. Crossing a filter boundary is a membership
+      // change the server owns — write-back here would leave a stale
+      // row in the wrong bucket with an unchanged total until an
+      // unrelated refetch. Skip it entirely and let the next server
+      // read reconverge.
+      if (options.suppressInvalidation) continue;
       queryClient.invalidateQueries({ queryKey: hit.queryKey });
       changed = true;
       continue;
@@ -1034,6 +1122,17 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
       const old = queryClient.getQueryData<ProfileRuntimeResponse>(
         profileKeys.runtime(event.profile_id),
       );
+      // t101 (review f001): compute the suppression witness BEFORE any
+      // cache write. The runtime cache is about to be updated with this
+      // very event; reading it afterwards would make every fresh event
+      // look like a replay of itself and swallow legitimate
+      // invalidations. Every witness input (runtime cache, collection
+      // rows, watermark) is still in its pre-event state here.
+      const witness = revisionWitness(queryClient, event);
+      const eventRevision = event.state_revision ?? 0;
+      const eventIsSuppressed =
+        (witness.maxRevision != null && eventRevision < witness.maxRevision) ||
+        witness.duplicate;
       // t098: each cache fences by its OWN revision. The caches
       // usually disagree (a collection page is refetched on focus;
       // the runtime cache only on a detail visit), so one fence taken
@@ -1119,28 +1218,17 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
           );
         }
       }
-      // Collection rows: the same event merges into every cached
-      // page under the same fence (t098). A duplicate or stale event
-      // changes nothing anywhere and has no side effects — in
-      // particular it must not trigger a refetch.
-      // t098 (code review f001/f002): state_revision is monotonic per
-      // profile across instances, so when the runtime cache knows a
-      // strictly newer revision than this event carries, the event is
-      // history. Its field merges still apply per-row under each
-      // row's own fence (the caches legitimately disagree), but its
-      // side effects are suppressed: it must not invalidate
-      // collection pages or the alerts model. Without a runtime
-      // cache entry there is no fresher witness and nothing is
-      // suppressed.
-      const eventIsHistory =
-        old != null && !runtimeFenceAllows(old, event);
+      // t098 / t101: the same event merges into every cached page under
+      // its own fence. A history/replay event changes nothing anywhere
+      // and has no side effects; a fresh event still invalidates
+      // filtered pages and alerts normally.
       applyRuntimeEventToCollections(queryClient, event, {
-        suppressInvalidation: eventIsHistory,
+        suppressInvalidation: eventIsSuppressed,
       });
       // Global coordinator-error banner: the compact alerts read
       // model is invalidated only when this event actually changes
       // the profile's alert membership/message.
-      if (!eventIsHistory && event.last_coordinator_error !== undefined) {
+      if (!eventIsSuppressed && event.last_coordinator_error !== undefined) {
         const alerts = queryClient.getQueryData<RuntimeAlertsResponse>(
           profileKeys.runtimeAlerts(),
         );
@@ -1158,6 +1246,14 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
           }
         }
       }
+      // t101: advance the watermark to the highest revision this client
+      // has now seen for the profile. New events raise it; history and
+      // replays leave it at its current high mark.
+      recordSeenRevision(
+        queryClient,
+        event.profile_id,
+        Math.max(witness.maxRevision ?? 0, eventRevision),
+      );
     });
 
     const unsubscribePreview: (() => void) | undefined =

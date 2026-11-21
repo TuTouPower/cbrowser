@@ -1,0 +1,15 @@
+{
+  "tid": "t101",
+  "attempt": 1,
+  "execution_id": "1d61eb92702541f7add550473e06349c",
+  "status": "done",
+  "branch": "t101_profile_event_watermark_residual",
+  "base_sha": "0e2f379e69ca8ff24e01cf589fff7113e9cbc628",
+  "spec_source_sha": "0e2f379e69ca8ff24e01cf589fff7113e9cbc628",
+  "tests": "`tsc -p tsconfig.test.json` 通过；Vitest 全量 88 文件 747/747 通过（含本 task 新增 4 例，先红后绿，Round 1 修复后再验）",
+  "blackbox": "不适用——本 task 无 `[deploy]` AC，纯前端缓存同步逻辑由可控 SSE 事件流在 Vitest 中触达生产 hook 验证，与 t098 同口径",
+  "review": "Round 1 一条 important 真修并经独立复现验证；Round 2 PASS（一条 minor 测试锁定缺口）；Round 3 零 finding、PASS（机器门禁 general_verdict=PASS、overall=PASS、AC 复验 3/3 TICK-VALID）",
+  "review_scope": "6610539d2d6cec18",
+  "pending": [],
+  "findings": []
+}
