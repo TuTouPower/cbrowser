@@ -761,7 +761,15 @@ export function ProfileForm({
         </Row>
         {/* t077 AC-001: color scheme and CJK are direct grid items,
             not two half-columns nested inside one flex item. */}
-        <Row label={t("formColorScheme")}>
+        <Row
+          label={t("formColorScheme")}
+          hint={
+            <FieldHelp
+              field={t("formColorScheme")}
+              text={t("formColorSchemeHelp")}
+            />
+          }
+        >
           <Select
             value={values.color_scheme ?? "light"}
             onValueChange={(value) =>

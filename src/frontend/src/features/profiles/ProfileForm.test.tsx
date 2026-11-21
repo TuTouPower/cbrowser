@@ -3,7 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider, en } from "../../i18n";
+import { I18nProvider, en, zh } from "../../i18n";
 import { ThemeProvider } from "../../theme";
 import { ToastProvider } from "../../shared/ui";
 import { ApiClientContext } from "../../shared/api/client_context";
@@ -838,5 +838,58 @@ describe("ProfileForm (t077)", () => {
       const trigger = screen.getByRole("combobox", { name });
       expect(trigger.className).toContain("w-full");
     }
+  });
+
+  it("color scheme carries bilingual scope help and echoes the saved value (t099 AC-003)", async () => {
+    renderForm({ mode: "create", stub: makeStub() });
+    await screen.findByTestId("profile-form-name");
+    const help = screen.getByRole("button", {
+      name: en.formShowHelp.replace("{field}", en.formColorScheme),
+    });
+    fireEvent.focus(help);
+    const tooltip = await screen.findByRole("tooltip");
+    expect(tooltip).toHaveTextContent(en.formColorSchemeHelp);
+    // The help covers the three contract points in both locales:
+    // the browser shell follows the scheme, adapting websites follow
+    // the preference, and the change applies on the next start.
+    for (const text of [en.formColorSchemeHelp, zh.formColorSchemeHelp]) {
+      expect(text.length).toBeGreaterThan(0);
+    }
+    expect(en.formColorSchemeHelp).toContain("browser shell");
+    expect(en.formColorSchemeHelp).toContain("Websites that adapt");
+    expect(en.formColorSchemeHelp).toContain("next time the browser starts");
+    expect(zh.formColorSchemeHelp).toContain("浏览器外壳");
+    expect(zh.formColorSchemeHelp).toContain("跟随");
+    expect(zh.formColorSchemeHelp).toContain("下一次浏览器启动生效");
+  });
+
+  it("color scheme help renders in Chinese under the zh locale (t099 AC-003)", async () => {
+    localStorage.setItem("cbrowser.locale", "zh");
+    try {
+      renderForm({ mode: "create", stub: makeStub() });
+      await screen.findByTestId("profile-form-name");
+      const help = screen.getByRole("button", {
+        name: zh.formShowHelp.replace("{field}", zh.formColorScheme),
+      });
+      fireEvent.focus(help);
+      expect(await screen.findByRole("tooltip")).toHaveTextContent(
+        zh.formColorSchemeHelp,
+      );
+    } finally {
+      localStorage.removeItem("cbrowser.locale");
+    }
+  });
+
+  it("color scheme echoes a saved dark value when the form reopens (t099 AC-003)", async () => {
+    renderForm({
+      mode: "edit",
+      initial: profile({ color_scheme: "dark" }),
+      stub: makeStub(),
+    });
+    await screen.findByTestId("profile-form-name");
+    const trigger = screen.getByRole("combobox", {
+      name: en.formColorScheme,
+    });
+    expect(trigger.textContent).toContain(en.formColorDark);
   });
 });

@@ -382,6 +382,7 @@ bash scripts/run_automation_probe.sh
 |AC-001|字体绑定后端托管：创建绑定平台默认集、已配置字体根而无集时创建失败、请求拒绝手选字段|unit `test_t075_profile_identity.py` + OpenAPI 导出比对|
 |AC-002|克隆保留已验证绑定、切平台重绑、无集切平台失败且原配置不变；GPU 字段与透传 flag 删除|unit `test_t075_profile_identity.py`；全仓 grep `gpu_family` 为空；同 seed 重启前后 WebGL 实值一致性为动态实测，待 p137 本地补验|
 |AC-003|配色只剩 light/dark、默认 light、请求拒绝第三态|unit `test_t075_profile_identity.py` + 前端 `ProfileForm` 用例|
+|t099|绑定配色派生原生外壳主题（浅 1/深 2、系统主题固定 0、既有 Preferences 保留、损坏重建）＋表单双语说明与保存回显|unit `test_t099_native_color_scheme.py` + 前端 `ProfileForm` t099 用例；真实外壳/网页行为为 [deploy]，本地补验 p162/p163|
 |AC-004|迁移 0013 改写行与快照、不可等价映射改写前阻塞、幂等、备份恢复演练|unit `test_t075_migration.py`（真实 SQLite + alembic）|
 |AC-005|字体源目录不存在时 Supervisor 挂载构造失败|unit `test_t075_supervisor_fonts.py`|
 |AC-006|挂载空/manifest 损坏/内容不符（逐文件 sha256 复核）/无必需字形时验证失败且健康不就绪；Runner 接缝真实验证后才启动|unit `test_t075_font_verification.py` + `test_t075_runner_fonts.py` + `test_t041_font_runtime.py` 就绪门禁|

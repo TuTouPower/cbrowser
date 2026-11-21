@@ -1,7 +1,7 @@
 ---
 slug: profile_management
 status: active
-tasks: [baseline, t075, t076, t077, t078, t079, t090, t094, t095, t098]
+tasks: [baseline, t075, t076, t077, t078, t079, t090, t094, t095, t098, t099]
 ---
 # 需求规范：Profile 管理与外部标签页
 
@@ -97,6 +97,7 @@ tasks: [baseline, t075, t076, t077, t078, t079, t090, t094, t095, t098]
 - Profile 运行配置新增 `fingerprint_platform`（`windows` 默认 / `macos`）与 `font_set_id`（引用同平台不可变字体集），经增量迁移 `0002_fingerprint_platform.py` 加入；两者属运行配置，修改任一都生成新 `ProfileConfigVersion`（AC-003）。
 - t075 起 `font_set_id` 为后端托管绑定：创建/克隆/切平台由服务按资产目录默认规则解析（`GET /api/v1/font-sets` 的 `default_font_set_id[platform]`，只取 verified 的集，其中最近一次验证通过的胜出），创建/更新请求不再接受该字段；字体根已配置（一切真实部署）而平台无可用集时创建/切换在写入前失败，部署中不再产生「无字体集」的 Profile（未配置字体根的进程可暂无绑定，但启动失败封闭）。旧 t053 A16 的显式 null 语义废止。
 - t075 新增运行配置 `include_cjk_fonts`（中文字体暴露开关，创建默认按语言派生）；`color_scheme` 收敛为 `light` / `dark`；`gpu_family` 删除（GPU 身份由引擎按种子+平台派生）。旧形状由迁移 `0013_profile_identity.py` 一次性改写，不可等价映射改写前阻塞（详见 fingerprint_platform spec 2.1 与 ADR 040）。
+- t099 起 `color_scheme` 同时作用于远端浏览器原生外壳：Runner 每次启动前把绑定值派生写入本 Profile 的 Chromium `Preferences`（`browser.theme.color_scheme2` 浅色 1 / 深色 2，并固定 `extensions.theme.system_theme` 为 0 消除 GTK 系统主题覆盖；spike s027 已在固定引擎实测存量 Profile 双向切换与多 Profile 独立配色），与既有网页偏好传参同源同值，写入失败封闭。创建/编辑表单的配色字段带中英文说明：外壳随配色切换、支持适配的网站跟随偏好、配置随新运行生效。
 - `font_bundle`（文泉驿三档）已删除：字段、镜像字体包、代码、文档与测试引用一并清理（AC-009）。
 - runtime 响应与 SSE 下发实际使用的 `font_set_id` 与 `missing_fonts`（t075 起读 Runner 启动前验证结论，不逐请求重扫）；绑定字体集缺失或 manifest / 文件不一致时启动失败封闭 `font_set_unavailable`，未绑定同样失败封闭（AC-006 / AC-007，旧 null 正常启动语义废止）。
 
