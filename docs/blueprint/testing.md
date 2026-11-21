@@ -382,6 +382,7 @@ bash scripts/run_automation_probe.sh
 |AC-001|字体绑定后端托管：创建绑定平台默认集、已配置字体根而无集时创建失败、请求拒绝手选字段|unit `test_t075_profile_identity.py` + OpenAPI 导出比对|
 |AC-002|克隆保留已验证绑定、切平台重绑、无集切平台失败且原配置不变；GPU 字段与透传 flag 删除|unit `test_t075_profile_identity.py`；全仓 grep `gpu_family` 为空；同 seed 重启前后 WebGL 实值一致性为动态实测，待 p137 本地补验|
 |AC-003|配色只剩 light/dark、默认 light、请求拒绝第三态|unit `test_t075_profile_identity.py` + 前端 `ProfileForm` 用例|
+|t099|绑定配色派生原生外壳主题（浅 1/深 2、系统主题固定 0、既有 Preferences 保留、损坏重建）＋表单双语说明与保存回显|unit `test_t099_native_color_scheme.py` + 前端 `ProfileForm` t099 用例；真实外壳/网页行为为 [deploy]，本地补验 p162/p163|
 |AC-004|迁移 0013 改写行与快照、不可等价映射改写前阻塞、幂等、备份恢复演练|unit `test_t075_migration.py`（真实 SQLite + alembic）|
 |AC-005|字体源目录不存在时 Supervisor 挂载构造失败|unit `test_t075_supervisor_fonts.py`|
 |AC-006|挂载空/manifest 损坏/内容不符（逐文件 sha256 复核）/无必需字形时验证失败且健康不就绪；Runner 接缝真实验证后才启动|unit `test_t075_font_verification.py` + `test_t075_runner_fonts.py` + `test_t041_font_runtime.py` 就绪门禁|
@@ -561,7 +562,7 @@ t094 移除探测容器沙箱后，测速正确性与防泄露证据由两条互
 
 - 协议与状态机以单元验证（`tests/unit/test_t082_policy_agent.py`）：身份全等校验与伪造拒绝、install/inspect 幂等、旧修订重放与同修订异 spec 的围栏拒绝、刷新 replace、fail-close 确认语义、resolve 输入校验（URL/凭据/注入拒绝）、畸形与超大请求拒绝、真实 UDS 客户端往返与不可达类型化错误；协议 schema 由 `scripts/export_policy_agent_protocol.py --check` 纳入门禁漂移检查。
 - 适配器生命周期以 fake Docker + 进程内 Agent 验证（`tests/unit/test_t082_adapter_policy_agents.py`）：启动恰建一个加固形状正确的 Agent、反复 verify 零建容器零 exec、冻结派生只解析一次、上游变化刷新（replace + 修订 +1）、刷新失败保留旧冻结 spec、第二适配器接管采纳、孤儿仅在目标消失时删除、Profile 拆除同步删 Agent、fail-close 未确认报错。
-- 核心收敛以脚本化适配器验证（`tests/unit/test_t082_supervisor_policy_convergence.py`）：漂移 + 失败封闭成功不暂停、未确认则暂停精确目标、本机制暂停在复验（含重装）通过后恢复、复验不过保持暂停、Agent 不可用先定点修复后超 30 秒预算隔离、Stream Agent 不可用走 Stream-only 替换、他实例暂停记录永不恢复、Agent 事件只定点修复对应 Profile。
+- 核心收敛以脚本化适配器验证（`tests/unit/test_t082_supervisor_policy_convergence.py`）：漂移 + 失败封闭成功不暂停、未确认则暂停精确目标、本机制暂停在复验（含重装）通过后恢复、复验不过保持暂停、Agent 不可用先定点修复后超 30 秒预算隔离、他实例暂停记录永不恢复、Agent 事件只定点修复对应 Profile。t097 起 Stream 无策略收敛面：Stream 策略状态不触发替换/隔离/失败由 `test_t097_browser_only_policy_agent.py` 与收敛套件的对应新用例钉住（Agent 命名与分组、Stream 目标拒绝建 Agent、启动收敛删除 Stream Agent 并替换旧形状 Browser Agent、非 internal 媒体网络不合规）；真机隔离矩阵与升级/回退属部署验收（p159–p161），云端单测不冒充。
 - 真实内核正负例改由 Policy Agent 驱动（`tests/e2e/test_supervisor_namespace_policy_e2e.py`、`test_supervisor_ipv6_policy_e2e.py`：经生产 `PolicyAgentClient` 在真实 netns 内 install/inspect、修订围栏拒绝、Agent 移除后规则持续生效），失败封闭与清理沿 `test_supervisor_policy_failure_e2e.py`（无效 policy 镜像使 Agent 永不健康）。真实容器链路属 [deploy] 层：两项 spike（仅 NET_ADMIN 完整能力、pause 冻结语义）与 AC-010 稳态验收不以单元证据替代，顺延登记见 p132 / p133。
 
 ## 最小状态协议、缓存围栏与稳态计数（t083）

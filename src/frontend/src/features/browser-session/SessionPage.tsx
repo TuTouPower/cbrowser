@@ -8,7 +8,7 @@ import { Banner, Button } from "../../shared/ui";
 import {
   useProfileQuery,
   useProfileRuntimeQuery,
-  useProfilesQuery,
+  useAllProfilesCollectionQuery,
   useGroupsQuery,
   useProxiesQuery,
   useFontSetsQuery,
@@ -91,7 +91,9 @@ export function SessionPage(): JSX.Element {
 
   const profileQuery = useProfileQuery(profileId, client);
   const runtimeQuery = useProfileRuntimeQuery(profileId, client);
-  const profilesQuery = useProfilesQuery(client);
+  // t098: the switcher reads each row's runtime projection from the
+  // collection itself — no separate summary read.
+  const profilesQuery = useAllProfilesCollectionQuery({}, client);
   const groupsQuery = useGroupsQuery(client);
   const proxiesQuery = useProxiesQuery(client);
   const fontSetsQuery = useFontSetsQuery(client);

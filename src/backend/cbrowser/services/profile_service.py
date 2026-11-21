@@ -28,11 +28,14 @@ from cbrowser.domain.models import (
     CandidateEntry,
     CollectionPage,
     ConfigVersionSnapshot,
+    CoordinatorErrorEntry,
     Profile,
+    ProfileCollectionItem,
     ProfileConfig,
     ProfileDeletionOperation,
     ProfileResponse,
     ProfileRuntime,
+    ProfileRuntimeProjection,
     ProxyCandidateEntry,
     ProxyCountryRange,
     ProxyProbeJob,
@@ -610,8 +613,11 @@ class ProfileService:
         sort: str = "default",
         page: int = 1,
         page_size: int = 50,
-    ) -> CollectionPage[ProfileResponse]:
-        """t076 AC-001: bounded server-side profile page."""
+        coordinator: Any = None,
+    ) -> CollectionPage[ProfileCollectionItem]:
+        """t076 AC-001 bounded server-side profile page; t098: each
+        row also carries its runtime projection, resolved for the
+        page's ids with ONE batch read (fixed query count)."""
         try:
             result = await self._repo.list_profiles_page(
                 search=search,
@@ -623,10 +629,35 @@ class ProfileService:
                 page=page,
                 page_size=page_size,
             )
+            runtimes = await self._repo.list_runtimes_by_ids(
+                [p.id for p in result.items]
+            )
         except DBAPIError as e:
             self._handle_db_error(e)
+        items = []
+        for p in result.items:
+            base = ProfileResponse.from_domain(p)
+            rt = runtimes.get(p.id)
+            projection = (
+                ProfileRuntimeProjection.from_runtime(rt)
+                if rt is not None
+                else None
+            )
+            if projection is not None and coordinator is not None:
+                # The coordinator error lives in coordinator memory;
+                # fill it from the same runtime row (convergence-aware
+                # read), bounded by the page.
+                projection.last_coordinator_error = (
+                    coordinator.get_last_error(p.id, runtime=rt)
+                )
+            items.append(
+                ProfileCollectionItem(
+                    **base.model_dump(),
+                    runtime=projection,
+                )
+            )
         return CollectionPage(
-            items=[ProfileResponse.from_domain(p) for p in result.items],
+            items=items,
             total=result.total,
             page=result.page,
             page_size=result.page_size,
@@ -637,12 +668,32 @@ class ProfileService:
     ) -> list[CandidateEntry]:
         return await self._repo.list_profile_candidates(search, limit)
 
-    async def list_runtimes(self) -> list[ProfileRuntime]:
-        """t076 AC-002: every runtime row in one batched read."""
+    async def list_coordinator_errors(
+        self, coordinator: Any
+    ) -> list[CoordinatorErrorEntry]:
+        """t098 compact read model for the global coordinator-error
+        banner: the coordinator names the (few) errored profiles; only
+        those runtime rows are read, and converged errors drop out via
+        the coordinator's own read."""
+        ids = coordinator.last_error_profile_ids()
+        if not ids:
+            return []
         try:
-            return await self._repo.list_runtimes()
+            runtimes = await self._repo.list_runtimes_by_ids(ids)
         except DBAPIError as e:
             self._handle_db_error(e)
+        entries: list[CoordinatorErrorEntry] = []
+        for pid in ids:
+            message = coordinator.get_last_error(
+                pid, runtime=runtimes.get(pid)
+            )
+            if message is not None:
+                entries.append(
+                    CoordinatorErrorEntry(
+                        profile_id=pid, last_coordinator_error=message
+                    )
+                )
+        return entries
 
     async def font_set_usage_counts(self) -> dict[tuple[str, str], int]:
         return await self._repo.font_set_usage_counts()

@@ -388,6 +388,8 @@ export const en = {
   formPresetCareful: "Careful",
   formColorLight: "Light",
   formColorDark: "Dark",
+  formColorSchemeHelp:
+    "Applies to the browser shell (tab bar, address bar and toolbar). Websites that adapt to a color preference follow it too; websites with their own fixed styling are unaffected. Takes effect the next time the browser starts.",
   formCreate: "Create",
   formCreateAndStart: "Create and start",
   formSave: "Save changes",
@@ -952,6 +954,8 @@ export const zh = {
   formPresetCareful: "谨慎",
   formColorLight: "浅色",
   formColorDark: "深色",
+  formColorSchemeHelp:
+    "作用于浏览器外壳（标签栏、地址栏和工具栏）；支持适配配色偏好的网站也会跟随，网站自行设定样式时不受影响。配置随下一次浏览器启动生效。",
   formCreate: "创建",
   formCreateAndStart: "创建并启动",
   formSave: "保存修改",

@@ -150,6 +150,7 @@ function runtime(
     observed_state: observed,
     runtime_instance_id: 'inst-1',
     config_version: 1,
+    state_revision: 1,
     failure_count: 0,
     restart_blocked: false,
     last_exit_event_id: null,
@@ -173,6 +174,31 @@ function makeStub(options: StubOptions = {}) {
   const spies = {
     profiles: {
       list: vi.fn(async () => PROFILES),
+      // t098: SessionPage's switcher reads the collection (rows carry
+      // their runtime projections); the stub serves the same fixture
+      // set with stopped projections.
+      listCollection: vi.fn(async () => ({
+        items: PROFILES.map((item) => ({
+          ...item,
+          runtime: {
+            desired_state: "stopped",
+            observed_state: "stopped",
+            config_version: 1,
+            state_revision: 1,
+            runtime_instance_id: null,
+            failure_count: 0,
+            restart_blocked: false,
+            last_started_at: null,
+            last_stopped_at: null,
+            preview_captured_at: null,
+            last_coordinator_error: null,
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        })),
+        total: PROFILES.length,
+        page: 1,
+        page_size: 100,
+      })),
       get: vi.fn(
         async (id: string) =>
           PROFILES.find((item) => item.id === id) ?? PROFILES[0]!,

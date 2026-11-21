@@ -1,4 +1,11 @@
-"""A9: the creator reclaims a Stream container when initialization fails."""
+"""A9: Stream startup failure handling.
+
+t097 retired the reclaim-on-init-failure and recorded-residue
+machinery together with the Stream policy installation that fed
+it: Stream startup now ends at container creation, and a failed
+Stream-only replacement is a bounded failure that keeps the
+Profile's port allocation and reports the transport as failed.
+"""
 
 from __future__ import annotations
 
@@ -98,103 +105,33 @@ async def _call(adapter, agent_secret, tokens_path):
 
 
 @pytest.mark.asyncio
-async def test_policy_install_failure_reclaims_this_stream_container(tmp_path):
+async def test_stream_start_installs_no_policy_and_uses_image_entrypoint(tmp_path):
+    # t097: Stream startup ends at container creation — no policy
+    # gate preparation, no Policy Agent, no rule installation and no
+    # gated entrypoint override (the stream image's own ENTRYPOINT
+    # runs the agent). The post-creation failure modes these seams
+    # served (policy install / endpoint resolution / gate readiness)
+    # no longer exist, and neither does their reclaim path.
     adapter, mock_client = _adapter(tmp_path)
     agent_secret, tokens_path = _stage(adapter, mock_client, tmp_path)
     container = _stream_container(adapter)
     mock_client.containers.run.return_value = container
-    adapter._install_network_policy = MagicMock(
-        side_effect=DockerSandboxError("policy failed")
-    )
 
-    with pytest.raises(DockerSandboxError):
-        await _call(adapter, agent_secret, tokens_path)
-    container.remove.assert_called_once_with(force=True)
+    result = await _call(adapter, agent_secret, tokens_path)
 
-
-@pytest.mark.asyncio
-async def test_address_resolution_failure_reclaims_this_stream_container(
-    tmp_path,
-):
-    adapter, mock_client = _adapter(tmp_path)
-    agent_secret, tokens_path = _stage(adapter, mock_client, tmp_path)
-    container = _stream_container(adapter)
-    mock_client.containers.run.return_value = container
-    adapter._resolved_endpoint = MagicMock(
-        side_effect=DockerSandboxError("dns failed")
-    )
-
-    with pytest.raises(DockerSandboxError):
-        await _call(adapter, agent_secret, tokens_path)
-    container.remove.assert_called_once_with(force=True)
-
-
-@pytest.mark.asyncio
-async def test_gate_readiness_failure_reclaims_this_stream_container(tmp_path):
-    adapter, mock_client = _adapter(tmp_path)
-    agent_secret, tokens_path = _stage(adapter, mock_client, tmp_path)
-    container = _stream_container(adapter)
-    mock_client.containers.run.return_value = container
-    adapter._install_network_policy = MagicMock(
-        side_effect=OSError("gate write failed")
-    )
-
-    with pytest.raises(DockerSandboxError):
-        await _call(adapter, agent_secret, tokens_path)
-    container.remove.assert_called_once_with(force=True)
-
-
-@pytest.mark.asyncio
-async def test_unknown_identity_container_is_not_deleted(tmp_path):
-    adapter, mock_client = _adapter(tmp_path)
-    agent_secret, tokens_path = _stage(adapter, mock_client, tmp_path)
-    container = _stream_container(adapter)
-    container.attrs = {
-        "Config": {"Env": ["CBROWSER_RUNTIME_INSTANCE_ID=different_instance"]}
-    }
-    mock_client.containers.run.return_value = container
-    adapter._install_network_policy = MagicMock(
-        side_effect=DockerSandboxError("policy failed")
-    )
-
-    with pytest.raises(DockerSandboxError):
-        await _call(adapter, agent_secret, tokens_path)
+    assert result is container
+    run_kwargs = mock_client.containers.run.call_args.kwargs
+    assert "entrypoint" not in run_kwargs
+    adapter._prepare_policy_gate.assert_not_called()
+    adapter._install_network_policy.assert_not_called()
+    adapter._resolved_endpoint.assert_not_called()
     container.remove.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_reclaim_failure_returns_typed_pending_residue(tmp_path):
-    from cbrowser.supervisor.docker_adapter import (
-        StreamContainerResidueError,
-        StreamResidue,
-    )
-
-    adapter, mock_client = _adapter(tmp_path)
-    agent_secret, tokens_path = _stage(adapter, mock_client, tmp_path)
-    container = _stream_container(
-        adapter, remove_error=docker.errors.DockerException("daemon gone")
-    )
-    mock_client.containers.run.return_value = container
-    adapter._install_network_policy = MagicMock(
-        side_effect=DockerSandboxError("policy failed")
-    )
-
-    with pytest.raises(StreamContainerResidueError) as caught:
-        await _call(adapter, agent_secret, tokens_path)
-    residue = caught.value.residue
-    assert isinstance(residue, StreamResidue)
-    assert residue.profile_id == "p1"
-    assert residue.runtime_instance_id == "inst_1"
-    assert residue.container_id == "stream-container-id"
-    assert residue.container_name == adapter.get_stream_container_name("p1")
 
 
 class _FakeAdapter:
     def __init__(self, root):
         self.validator = PathValidator(root)
         self.start_error = None
-        self.residue_cleanup_result = True
-        self.cleanup_residue_calls = []
         self.cleanup_container_calls = []
         self.browser = SimpleNamespace(name="cbrowser-browser-p", id="b-id")
         runtime = self.validator.get_runtime_dir("p")
@@ -227,11 +164,6 @@ class _FakeAdapter:
             raise self.start_error
         return SimpleNamespace(id="new-stream-id")
 
-    def cleanup_stream_residue(self, residue):
-        self.cleanup_residue_calls.append(residue)
-        return self.residue_cleanup_result
-
-
 def _make_core(tmp_path, adapter):
     api = httpx.AsyncClient(
         transport=httpx.MockTransport(lambda r: httpx.Response(200, json={})),
@@ -250,17 +182,16 @@ def _make_core(tmp_path, adapter):
 
 
 @pytest.mark.asyncio
-async def test_replacement_failure_records_residue_and_keeps_port(tmp_path):
-    from cbrowser.supervisor.docker_adapter import (
-        StreamContainerResidueError,
-        StreamResidue,
-    )
+async def test_replacement_failure_keeps_port_and_reports_failed(tmp_path):
+    # A failed Stream start inside a Stream-only replacement is a
+    # bounded failure: the replacement reports False, the transport
+    # observation goes failed and the Profile keeps its allocated
+    # UDP mux port (no residue bookkeeping exists since t097 removed
+    # the post-creation policy installation that produced it).
+    from cbrowser.supervisor.docker_adapter import DockerSandboxError
 
     adapter = _FakeAdapter(tmp_path / "data")
-    residue = StreamResidue("p", "inst1", "cid-stream", "cbrowser-stream-p")
-    adapter.start_error = StreamContainerResidueError(
-        residue, "DockerSandboxError"
-    )
+    adapter.start_error = DockerSandboxError("create failed")
     core, api = _make_core(tmp_path, adapter)
     await core.ports.allocate("p")
     session = ActiveSession("p", "inst1", 1, 30000, "b", "s")
@@ -270,71 +201,8 @@ async def test_replacement_failure_records_residue_and_keeps_port(tmp_path):
         "p", session, rebuild_network=False
     )
     assert result is False
-    assert core._pending_stream_residue["p"] is residue
     assert core.ports.get_port("p") == 30000
     assert adapter.cleanup_container_calls == ["cbrowser-stream-p"]
-    await api.aclose()
-
-
-@pytest.mark.asyncio
-async def test_next_replacement_cleans_residue_before_starting(tmp_path):
-    from cbrowser.supervisor.docker_adapter import (
-        StreamContainerResidueError,
-        StreamResidue,
-    )
-
-    adapter = _FakeAdapter(tmp_path / "data")
-    residue = StreamResidue("p", "inst1", "cid-stream", "cbrowser-stream-p")
-    adapter.start_error = StreamContainerResidueError(
-        residue, "DockerSandboxError"
-    )
-    core, api = _make_core(tmp_path, adapter)
-    await core.ports.allocate("p")
-    session = ActiveSession("p", "inst1", 1, 30000, "b", "s")
-    core._sessions["p"] = session
-
-    await core._replace_stream_only("p", session, rebuild_network=False)
-    adapter.start_error = None
-    adapter.start_stream_container = AsyncMock(
-        return_value=SimpleNamespace(id="new-stream-id")
-    )
-
-    result = await core._replace_stream_only(
-        "p", session, rebuild_network=False
-    )
-    assert result is True
-    assert adapter.cleanup_residue_calls == [residue]
-    assert core._pending_stream_residue.get("p") is None
-    assert core.ports.get_port("p") == 30000
-    await api.aclose()
-
-
-@pytest.mark.asyncio
-async def test_new_generation_residue_is_discarded_not_deleted(tmp_path):
-    from cbrowser.supervisor.docker_adapter import (
-        StreamContainerResidueError,
-        StreamResidue,
-    )
-
-    adapter = _FakeAdapter(tmp_path / "data")
-    residue = StreamResidue("p", "inst1", "cid-stream", "cbrowser-stream-p")
-    adapter.start_error = StreamContainerResidueError(
-        residue, "DockerSandboxError"
-    )
-    core, api = _make_core(tmp_path, adapter)
-    await core.ports.allocate("p")
-    old = ActiveSession("p", "inst1", 1, 30000, "b", "s")
-    core._sessions["p"] = old
-    await core._replace_stream_only("p", old, rebuild_network=False)
-
-    newer = ActiveSession("p", "inst2", 1, 30000, "b", "s")
-    core._sessions["p"] = newer
-    adapter.start_error = None
-    adapter.start_stream_container = AsyncMock(
-        return_value=SimpleNamespace(id="new-stream-id")
-    )
-
-    await core._replace_stream_only("p", newer, rebuild_network=False)
-    assert adapter.cleanup_residue_calls == []
-    assert core._pending_stream_residue.get("p") is None
+    observation = core.get_transport_observation("p")
+    assert observation.transport_state == "failed"
     await api.aclose()

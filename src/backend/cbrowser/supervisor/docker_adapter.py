@@ -186,30 +186,6 @@ class LoopbackMappingError(DockerSandboxError):
     """
 
 
-@dataclass(frozen=True)
-class StreamResidue:
-    profile_id: str
-    runtime_instance_id: str
-    container_id: str | None
-    container_name: str | None
-
-
-class StreamContainerResidueError(DockerSandboxError):
-    def __init__(
-        self,
-        residue: StreamResidue,
-        cause_type: str,
-        cause_detail: str | None = None,
-    ) -> None:
-        message = "Stream container cleanup pending"
-        if cause_detail:
-            message = f"{message}: {cause_detail}"
-        super().__init__(message)
-        self.residue = residue
-        self.cause_type = cause_type
-        self.cause_detail = cause_detail
-
-
 CACHE_GENERATION_FILENAME = ".cbrowser-cache-generation.json"
 
 
@@ -416,8 +392,43 @@ class DockerAdapter:
         ).hexdigest()
         return digest[:20]
 
-    def _policy_agent_name(self, slot: str) -> str:
-        return f"{self.resource_prefix}-policy-agent-{slot}"
+    def _agent_profile_number(
+        self, profile_id: str, target: Any | None
+    ) -> int:
+        """Display number for Agent naming/labelling.
+
+        The Supervisor's remembered mapping is authoritative; for a
+        takeover target whose mapping was not (re)learned, the Browser
+        container's own ``com.cbrowser.profile-number`` label is the
+        fallback — the number is a property of the Profile, recorded
+        on every sandbox at creation.
+        """
+        number = self._profile_numbers.get(profile_id)
+        if number is not None:
+            return number
+        if target is not None:
+            parsed = _parse_profile_number(
+                (getattr(target, "labels", None) or {}).get(
+                    "com.cbrowser.profile-number"
+                )
+            )
+            if parsed is not None:
+                return parsed
+        raise DockerSandboxError(
+            "Profile display number is unknown for this sandbox"
+        )
+
+    def _policy_agent_name(
+        self, profile_id: str, target: Any | None = None
+    ) -> str:
+        # t097: the Browser Policy Agent carries the Profile's display
+        # number like its Browser/Stream siblings
+        # (``<prefix>-<NNNN>-policy-agent``); the per-binding slot hash
+        # survives only as the control-socket directory name.
+        return (
+            f"{self.resource_prefix}-"
+            f"{self._agent_profile_number(profile_id, target):04d}-policy-agent"
+        )
 
     def _policy_agent_socket_path(
         self, profile_id: str, instance_id: str, role: str
@@ -440,7 +451,9 @@ class DockerAdapter:
         version = _parse_config_version(str(config_version))
         if version is None:
             raise DockerSandboxError("Invalid config version for Policy Agent")
-        if role not in ("browser", "stream"):
+        if role != "browser":
+            # t097: Policy Agents exist only for the Browser target;
+            # Stream isolation is a property of the media topology.
             raise DockerSandboxError("Invalid role for Policy Agent")
         return PolicyAgentIdentity(
             deployment_id=self.deployment_instance_id,
@@ -545,9 +558,7 @@ class DockerAdapter:
             except (PolicyAgentUnavailable, PolicyAgentRejected):
                 self._policy_agents.pop(target.id, None)
                 handle = None
-        name = self._policy_agent_name(
-            self._policy_agent_slot(profile_id, instance_id, role)
-        )
+        name = self._policy_agent_name(profile_id, target)
         existing = None
         try:
             existing = self.client.containers.get(name)
@@ -566,6 +577,23 @@ class DockerAdapter:
             # Owned but stale/unhealthy: it serves a dead binding, so it
             # is removed before its replacement is created.
             self._remove_policy_agent_container(existing)
+        # t097 convergence: an Agent bound to this exact target under a
+        # legacy shape (pre-t097 hash-slot name, no profile grouping)
+        # must not survive alongside its replacement — adopt it when it
+        # already is the current shape, remove it otherwise. Agents
+        # bound to the target with a mismatched identity are stale for
+        # the same reason and are removed as well.
+        for agent_container in self._scan_policy_agent_containers():
+            labels = agent_container.labels or {}
+            if labels.get("com.cbrowser.target-container-id") != target.id:
+                continue
+            if self._agent_labels_match(labels, identity) and (
+                getattr(agent_container, "name", "") or ""
+            ).lstrip("/") == name:
+                adopted = self._adopt_policy_agent(agent_container, identity)
+                if adopted is not None:
+                    return adopted
+            self._remove_policy_agent_container(agent_container)
         return self._create_policy_agent(target, identity)
 
     def _create_policy_agent(
@@ -586,7 +614,7 @@ class DockerAdapter:
         # No live Agent owns this slot (ensure path verified); a socket
         # file here is a dead predecessor's residue.
         (slot_dir / "agent.sock").unlink(missing_ok=True)
-        name = self._policy_agent_name(slot)
+        name = self._policy_agent_name(identity.profile_id, target)
         agent = None
         try:
             agent = self.client.containers.create(
@@ -624,6 +652,7 @@ class DockerAdapter:
                     identity.config_version,
                     identity.role,
                     identity.target_container_id,
+                    self._agent_profile_number(identity.profile_id, target),
                     deployment_id=self.deployment_instance_id,
                 ),
             )
@@ -743,7 +772,7 @@ class DockerAdapter:
         config_version = labels.get("com.cbrowser.config-version")
         if (
             not profile_id
-            or role not in ("browser", "stream")
+            or role != "browser"
             or not instance_id
             or config_version is None
             or not self.deployment_instance_id
@@ -796,20 +825,20 @@ class DockerAdapter:
         An Agent whose target still exists with a matching identity is
         left running for core takeover; anything else owned is removed
         with its control slot.
+
+        t097 convergence: Stream Policy Agents are abolished, so an
+        owned Agent bound to a Stream target is removed outright (its
+        full identity is re-verified by the removal path). A Browser
+        Agent verified against a live target but carrying a legacy
+        shape (pre-t097 name or missing profile grouping labels) is
+        replaced in the current shape via the ensure path, so an
+        upgraded deployment converges to exactly one current Agent per
+        Browser with no legacy residue.
         """
         for agent_container in self._scan_policy_agent_containers():
             labels = agent_container.labels or {}
-            name = getattr(agent_container, "name", "") or ""
-            slot = self._policy_agent_slot(
-                labels.get("com.cbrowser.profile-id") or "",
-                labels.get("com.cbrowser.runtime-instance-id") or "",
-                labels.get("com.cbrowser.target-role") or "",
-            )
-            if name != self._policy_agent_name(slot):
-                logger.warning(
-                    "Orphan policy agent identity mismatch retained: name=%s",
-                    name,
-                )
+            if labels.get("com.cbrowser.target-role") == "stream":
+                self._remove_policy_agent_container(agent_container)
                 continue
             target_id = labels.get("com.cbrowser.target-container-id")
             target = None
@@ -823,6 +852,36 @@ class DockerAdapter:
             identity = self._identity_for_target(target) if target else None
             if identity is None or not self._agent_labels_match(labels, identity):
                 self._remove_policy_agent_container(agent_container)
+                continue
+            if target is not None:
+                try:
+                    legacy_shape = (
+                        (getattr(agent_container, "name", "") or "").lstrip("/")
+                        != self._policy_agent_name(identity.profile_id, target)
+                        or labels.get("com.cbrowser.profile-number")
+                        != f"{self._agent_profile_number(identity.profile_id, target):04d}"
+                    )
+                except DockerSandboxError:
+                    # The display number is unresolvable for this
+                    # Profile, so the current shape cannot be derived;
+                    # retain the verified Agent untouched.
+                    continue
+                if not legacy_shape:
+                    continue
+                try:
+                    self.ensure_policy_agent(
+                        target,
+                        profile_id=identity.profile_id,
+                        instance_id=identity.runtime_instance_id,
+                        config_version=identity.config_version,
+                        role="browser",
+                    )
+                except DockerSandboxError:
+                    logger.warning(
+                        "Legacy policy agent replacement failed; the "
+                        "start path will retry: profile=%s",
+                        identity.profile_id,
+                    )
 
 
     def _resolve_via_agent(
@@ -1667,6 +1726,10 @@ with path.open('w') as output:
         inspection (reconcile migrates non-conforming networks by
         rebuild). New networks always get an allocated explicit subnet:
         allocation failure is explicit, never an auto-subnet fallback.
+        The network is internal (t097): it carries only this Profile's
+        media and Gateway signalling, and the topology itself — not a
+        per-container rule set — denies the Stream any routed egress
+        to the internet, the LAN, host services or other Profiles.
 
         AC-015: the allocation lock guards only the get+allocate+reserve
         phase. The Docker create runs outside it, bounded by
@@ -1705,6 +1768,7 @@ with path.open('w') as output:
                     self.client.networks.create,
                     net_name,
                     driver="bridge",
+                    internal=True,
                     ipam=ipam,
                     labels=gate_labels(media_network_labels(
                         network_labels(
@@ -1734,9 +1798,10 @@ with path.open('w') as output:
     def inspect_media_network(self, profile_id: str) -> dict[str, Any]:
         """Conformance snapshot of the Profile media network.
 
-        ``conforms`` requires the recorded plan labels AND a live IPAM
-        config that matches them; anything else (missing network,
-        pre-spec network, label/IPAM drift) is reported, not assumed.
+        ``conforms`` requires the recorded plan labels, a live IPAM
+        config that matches them AND the internal topology (t097);
+        anything else (missing network, pre-spec network, label/IPAM
+        drift, a routable pre-t097 network) is reported, not assumed.
         """
         net_name = self.get_network_name(profile_id)
         result: dict[str, Any] = {
@@ -1781,7 +1846,11 @@ with path.open('w') as output:
                 if ip == plan.gateway_endpoint:
                     result["gateway_attached_id"] = container_id
                     result["gateway_ip"] = ip
-        result["conforms"] = bool(plan is not None and ipam_matches)
+        result["conforms"] = bool(
+            plan is not None
+            and ipam_matches
+            and network.attrs.get("Internal") is True
+        )
         return result
 
     def _require_network_ownership(self, network: Any, name: str) -> None:
@@ -2330,12 +2399,12 @@ with path.open('w') as output:
             profile_id, selkies_tokens_path
         )
 
-        gate = self._prepare_policy_gate(profile_id, runtime_instance_id, "stream")
-        allowed_tcp: list[tuple[str, int]] = []
-        allowed_udp: list[tuple[str, int]] = []
+        # t097: the Stream has no Policy Agent, no startup gate and no
+        # installed rule set. Its isolation is the internal media
+        # network itself; the container starts on the stream image's
+        # own entrypoint as soon as Docker creates it.
         mounts = stream_volumes(
             planner=self.mount_planner,
-            gate=gate,
             x11_socket=x11_socket,
             xauth_file=xauth_file,
             pulse_dir=pulse_dir,
@@ -2392,12 +2461,10 @@ with path.open('w') as output:
         env.update(self._agent_socket_environment(profile_id, runtime_instance_id))
         ports = stream_ports(udp_mux_port)
 
-        container = None
         try:
             container = await asyncio.to_thread(
                 self.client.containers.run,
                 self.stream_image,
-                entrypoint=self._gated_entrypoint(runtime_instance_id, "stream"),
                 name=s_name,
                 detach=True,
                 user="1000:1000",
@@ -2420,45 +2487,13 @@ with path.open('w') as output:
                     deployment_id=self.deployment_instance_id,
                 )),
             )
-            await asyncio.to_thread(
-                self.ensure_policy_agent,
-                container,
-                profile_id=profile_id,
-                instance_id=runtime_instance_id,
-                config_version=config_version,
-                role="stream",
-            )
-            allowed_tcp.extend(
-                await asyncio.to_thread(
-                    self._resolved_endpoint, container, resolved_gateway_url
-                )
-            )
-            await asyncio.to_thread(
-                self._install_network_policy,
-                container,
-                {
-                    "role": "stream",
-                    "udp_mux_port": udp_mux_port,
-                    "allowed_tcp": allowed_tcp,
-                    "allowed_udp": allowed_udp,
-                },
-                gate,
-                runtime_instance_id,
-                "stream",
-                profile_id=profile_id,
-                config_version=config_version,
-            )
             return container
-        except Exception as exc:  # noqa: BLE001 - initialization failure is owned by the creator
-            if container is not None:
-                self._remove_policy_agents_for_target(container.id)
-                residue = self._reclaim_created_stream(
-                    container, profile_id, runtime_instance_id
-                )
-                if residue is not None:
-                    raise StreamContainerResidueError(
-                        residue, type(exc).__name__, docker_error_detail(exc)
-                    ) from exc
+        except Exception as exc:  # noqa: BLE001 - creation failure is owned by the creator
+            # t097: creation is the last step of Stream startup — the
+            # post-creation policy installation whose failures the old
+            # reclaim path served no longer exists. A container the
+            # daemon created despite a failed call is removed by name
+            # at the next start (cleanup_container_by_name above).
             if isinstance(exc, DockerSandboxError):
                 raise
             if isinstance(exc, DockerException):
@@ -2470,86 +2505,6 @@ with path.open('w') as output:
                 f"Failed to initialize stream container {s_name}: "
                 f"{docker_error_detail(exc)}"
             ) from None
-
-    def _reclaim_created_stream(
-        self, container: Any, profile_id: str, instance_id: str
-    ) -> StreamResidue | None:
-        residue = StreamResidue(
-            profile_id=profile_id,
-            runtime_instance_id=instance_id,
-            container_id=getattr(container, "id", None),
-            container_name=getattr(container, "name", None),
-        )
-        labels = getattr(container, "labels", None) or {}
-        verified = (
-            residue.container_id is not None
-            and residue.container_name
-            == self.get_stream_container_name(profile_id)
-            and labels.get("com.cbrowser.prefix") == self.resource_prefix
-            and labels.get("com.cbrowser.managed-by") == "supervisor"
-            and labels.get("com.cbrowser.role") == "stream"
-            and labels.get("com.cbrowser.profile-id") == profile_id
-            and container_runtime_instance_id(container) == instance_id
-        )
-        if not verified:
-            logger.warning(
-                "Stream container identity unverified; retained: container=%s",
-                residue.container_id,
-            )
-            return residue
-        try:
-            container.remove(force=True)
-        except Exception as exc:  # noqa: BLE001 - reclaim failure is reported as typed pending residue
-            logger.warning(
-                "Stream container reclaim failed: container=%s error_type=%s",
-                residue.container_id,
-                type(exc).__name__,
-            )
-            return residue
-        return None
-
-    def cleanup_stream_residue(self, residue: StreamResidue) -> bool:
-        if not residue.container_id:
-            return False
-        try:
-            container = self.client.containers.get(residue.container_id)
-        except NotFound:
-            return True
-        except DockerException as exc:
-            logger.warning(
-                "Stream residue lookup failed: container=%s error_type=%s",
-                residue.container_id,
-                type(exc).__name__,
-            )
-            return False
-        labels = getattr(container, "labels", None) or {}
-        if (
-            getattr(container, "name", None)
-            != self.get_stream_container_name(residue.profile_id)
-            or labels.get("com.cbrowser.prefix") != self.resource_prefix
-            or labels.get("com.cbrowser.managed-by") != "supervisor"
-            or labels.get("com.cbrowser.role") != "stream"
-            or labels.get("com.cbrowser.profile-id") != residue.profile_id
-            or container_runtime_instance_id(container)
-            != residue.runtime_instance_id
-        ):
-            logger.warning(
-                "Stream residue identity mismatch; retained: container=%s",
-                residue.container_id,
-            )
-            return False
-        try:
-            container.remove(force=True)
-        except NotFound:
-            return True
-        except DockerException as exc:
-            logger.warning(
-                "Stream residue removal failed: container=%s error_type=%s",
-                residue.container_id,
-                type(exc).__name__,
-            )
-            return False
-        return True
 
     def cleanup_container_by_name(self, name: str) -> None:
         try:
@@ -2760,21 +2715,6 @@ with path.open('w') as output:
         """The current Gateway container ID, or None when absent."""
         gateways = self.scan_gateway_containers()
         return gateways[0].id if gateways else None
-
-    def stream_policy_spec(
-        self, plan: MediaNetworkPlan, gateway_port: int, udp_mux_port: int
-    ) -> dict[str, Any]:
-        """Expected live Stream netfilter spec for convergence checks.
-
-        Mirrors startup installation: the only allowed TCP peer is the
-        Gateway at its fixed media endpoint, plus the UDP mux listener.
-        """
-        return {
-            "role": "stream",
-            "udp_mux_port": udp_mux_port,
-            "allowed_tcp": [(plan.gateway_endpoint, gateway_port)],
-            "allowed_udp": [],
-        }
 
     def browser_policy_spec(
         self, profile_id: str, container: Any

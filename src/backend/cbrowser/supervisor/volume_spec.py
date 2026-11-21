@@ -92,15 +92,14 @@ def browser_volumes(
 def stream_volumes(
     *,
     planner: MountPlanner,
-    gate: Path,
     x11_socket: Path,
     xauth_file: Path,
     pulse_dir: Path,
     secret_file: Path,
     selkies_file: Path,
 ) -> list[Mount]:
+    # t097: no policy gate mount — the Stream has no startup gate.
     items: list[tuple[Path, str, str]] = [
-        (gate, "/run/cbrowser_policy", "ro"),
         (x11_socket, "/tmp/.X11-unix/X99", "ro"),
         (xauth_file, "/tmp/.Xauthority", "ro"),
         (pulse_dir, "/pulse", "ro"),

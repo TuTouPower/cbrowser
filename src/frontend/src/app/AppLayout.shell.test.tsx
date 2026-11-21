@@ -29,6 +29,7 @@ function runtimeFor(id: string, observed = "stopped", error: string | null = nul
     observed_state: observed,
     runtime_instance_id: null,
     config_version: 1,
+    state_revision: 1,
     failure_count: 0,
     restart_blocked: false,
     last_exit_event_id: null,
@@ -37,21 +38,8 @@ function runtimeFor(id: string, observed = "stopped", error: string | null = nul
   } as ProfileRuntimeResponse;
 }
 
-function summaryFor(id: string, observed = "stopped", error: string | null = null) {
-  return {
-    profile_id: id,
-    desired_state: observed,
-    observed_state: observed,
-    runtime_instance_id: null,
-    config_version: 1,
-    failure_count: 0,
-    restart_blocked: false,
-    last_started_at: null,
-    last_stopped_at: null,
-    preview_captured_at: null,
-    last_coordinator_error: error,
-    updated_at: "2026-01-01T00:00:00Z",
-  };
+function alertFor(id: string, error: string) {
+  return { profile_id: id, last_coordinator_error: error };
 }
 
 function installMatchMedia(narrow: boolean) {
@@ -80,12 +68,9 @@ function renderShell() {
     profiles: {
       list: vi.fn(async () => PROFILES),
       getRuntime: vi.fn(async (id: string) => runtimeFor(id)),
-      // t076 AC-002: the shell snapshot reads one batched summary, never
+      // t098: the shell banner reads the compact alerts model, never
       // per-profile runtime endpoints.
-      getRuntimeSummary: vi.fn(async () => ({
-        entries: [summaryFor("p1"), summaryFor("p2")],
-        running_count: 0,
-      })),
+      getRuntimeAlerts: vi.fn(async () => ({ entries: [] })),
       update: vi.fn(async () => PROFILES[0]),
     },
     health: { check: vi.fn(async () => undefined) },
@@ -178,21 +163,18 @@ describe("AppLayout shell contract (t036+)", () => {
     );
   });
 
-  it("surfaces coordinator banner from SSE runtime data", async () => {
+  it("surfaces coordinator banner from the alerts read model", async () => {
     const view = renderShell();
     await waitFor(() =>
-      expect(view.client.profiles.getRuntimeSummary).toHaveBeenCalledTimes(1),
+      expect(view.client.profiles.getRuntimeAlerts).toHaveBeenCalledTimes(1),
     );
 
-    // t076 AC-002/AC-003: the banner reads the batched summary cache,
-    // which the SSE sync keeps in step without a refetch.
+    // t098 AC-003: the banner reads the compact alerts cache, which
+    // the SSE sync invalidates whenever an event changes a profile's
+    // coordinator error.
     act(() => {
-      view.queryClient.setQueryData(profileKeys.runtimeSummary(), {
-        entries: [
-          summaryFor("p1", "running", "coordinator unreachable"),
-          summaryFor("p2", "stopped"),
-        ],
-        running_count: 1,
+      view.queryClient.setQueryData(profileKeys.runtimeAlerts(), {
+        entries: [alertFor("p1", "coordinator unreachable")],
       });
     });
     const banner = await view.findByTestId("runtime-coordinator-error");

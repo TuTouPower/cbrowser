@@ -584,6 +584,40 @@ class ProfileRepository:
             ).all()
             return [CandidateEntry(id=r[0], name=r[1]) for r in rows]
 
+    async def list_runtimes_by_ids(
+        self, profile_ids: list[str]
+    ) -> dict[str, ProfileRuntime]:
+        """Runtime rows for an explicit id set in ONE SELECT (t098):
+        the bounded collection page resolves its rows' projections
+        with this single batch read, so the query count stays fixed
+        no matter how large the profile table grows."""
+        if not profile_ids:
+            return {}
+        async with self._session_maker() as session:
+            models = (
+                await session.execute(
+                    select(ProfileRuntimeModel).where(
+                        ProfileRuntimeModel.profile_id.in_(profile_ids)
+                    )
+                )
+            ).scalars().all()
+            if not models:
+                return {}
+            numbers = dict(
+                (
+                    await session.execute(
+                        select(ProfileModel.id, ProfileModel.display_number)
+                        .where(ProfileModel.id.in_(profile_ids))
+                    )
+                ).all()
+            )
+            return {
+                m.profile_id: self._to_domain_runtime(
+                    m, display_number=numbers[m.profile_id]
+                )
+                for m in models
+            }
+
     async def list_runtimes(self) -> list[ProfileRuntime]:
         """Every profile's runtime row in one SELECT (t076 AC-002)."""
         async with self._session_maker() as session:
@@ -2147,11 +2181,28 @@ class ProfileRepository:
                     )
                 ).all()
             )
+            # t098: each referenced profile's observed state travels
+            # with the reference data (one bounded SELECT for the
+            # entry set); a missing runtime row stays an explicit
+            # ``None`` instead of a guessed state.
+            states = dict(
+                (
+                    await session.execute(
+                        select(
+                            ProfileRuntimeModel.profile_id,
+                            ProfileRuntimeModel.observed_state,
+                        ).where(
+                            ProfileRuntimeModel.profile_id.in_(list(per_proxy))
+                        )
+                    )
+                ).all()
+            )
             return [
                 ProxyUsedByEntry(
                     profile_id=pid,
                     name=names.get(pid, pid),
                     kind=kind,  # type: ignore[arg-type]
+                    observed_state=states.get(pid),  # type: ignore[arg-type]
                 )
                 for pid, kind in sorted(per_proxy.items())
             ]

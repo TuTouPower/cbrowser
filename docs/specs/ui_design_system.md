@@ -1,7 +1,7 @@
 ---
 slug: ui_design_system
 status: active
-tasks: [baseline, t075, t077, t078, t079]
+tasks: [baseline, t075, t077, t078, t079, t099]
 ---
 # 需求规范：设计系统与应用外壳 (ui_design_system)
 
@@ -28,7 +28,7 @@ tasks: [baseline, t075, t077, t078, t079]
 ### 2.3 主题运行时
 
 - 偏好 `system` / `light` / `dark`，默认 `dark`，存 `localStorage` 的 `cbrowser.theme`；三态切换即时生效并持久化；`system` 模式监听 `prefers-color-scheme` 变化并跟随。
-- `public/theme_boot.js` 为 `<head>` 中外链经典脚本，首帧前设置 `<html>` 的 `dark` / `light` class 与 `color-scheme`；`index.html` 不含内联脚本。UI 主题与 Profile 的 `color_scheme`（远端网页 `prefers-color-scheme`）互不影响：切换 UI 主题不读写任何 Profile 配置。
+- `public/theme_boot.js` 为 `<head>` 中外链经典脚本，首帧前设置 `<html>` 的 `dark` / `light` class 与 `color-scheme`；`index.html` 不含内联脚本。UI 主题与 Profile 的 `color_scheme` 互不影响：切换 UI 主题不读写任何 Profile 配置，也不改变任一远端浏览器配色；Profile 配色则同时作用于远端网页 `prefers-color-scheme` 与浏览器原生外壳（t099，见 profile_management）。
 
 ### 2.4 应用外壳与路由
 

@@ -35,6 +35,7 @@ from cbrowser.domain.models import (
     CollectionPage,
     ConfigVersionResponse,
     ErrorResponse,
+    ProfileCollectionItem,
     ProfileConfig,
     ProfileCreateRequest,
     ProfileDeletionBatchResponse,
@@ -54,10 +55,9 @@ from cbrowser.domain.models import (
     RuntimeEvent,
     RuntimeEventReportRequest,
     RuntimeEventResponse,
+    RuntimeAlertsResponse,
     RuntimeInstanceBindRequest,
     RuntimeObservedReportRequest,
-    RuntimeSummaryEntry,
-    RuntimeSummaryResponse,
     ValidationErrorResponse,
 )
 from cbrowser.services.profile_service import (
@@ -217,6 +217,7 @@ async def subscribe_runtime_events(
                         observed_state=rt.observed_state,
                         runtime_instance_id=rt.runtime_instance_id,
                         config_version=rt.config_version,
+                        state_revision=rt.state_revision,
                         failure_count=rt.failure_count,
                         restart_blocked=rt.restart_blocked,
                         last_started_at=rt.last_started_at,
@@ -369,7 +370,7 @@ async def list_profiles(
 
 @profile_router.get(
     "/profiles/collection",
-    response_model=CollectionPage[ProfileResponse],
+    response_model=CollectionPage[ProfileCollectionItem],
     responses={
         status.HTTP_503_SERVICE_UNAVAILABLE: {
             "model": ErrorResponse,
@@ -378,6 +379,7 @@ async def list_profiles(
     },
 )
 async def list_profiles_collection(
+    request: Request,
     service: Annotated[ProfileService, Depends(get_profile_service)],
     search: Annotated[str | None, Query(max_length=255)] = None,
     group_id: Annotated[str | None, Query()] = None,
@@ -389,7 +391,11 @@ async def list_profiles_collection(
     page_size: Annotated[int, Query(ge=1, le=1000)] = 50,
 ):
     """t076 AC-001: bounded server-side profile page (search/filter/sort
-    run against the full set; page_size is clamped to 1..100)."""
+    run against the full set; page_size is clamped to 1..100).
+
+    t098: every row carries its runtime projection, resolved for the
+    page's ids only. The coordinator error is filled in here, bounded
+    by the page — it lives in coordinator memory, not the DB row."""
     return await service.list_profiles_page(
         search=search,
         group_id=group_id,
@@ -399,6 +405,7 @@ async def list_profiles_collection(
         sort=sort,
         page=page,
         page_size=page_size,
+        coordinator=getattr(request.app.state, "coordinator", None),
     )
 
 
@@ -416,47 +423,22 @@ async def list_profile_candidates(
 
 
 @profile_router.get(
-    "/profiles/runtime-summary",
-    response_model=RuntimeSummaryResponse,
+    "/profiles/runtime-alerts",
+    response_model=RuntimeAlertsResponse,
 )
-async def get_runtime_summary(
+async def get_runtime_alerts(
     request: Request,
     service: Annotated[ProfileService, Depends(get_profile_service)],
 ):
-    """t076 AC-002: one batched read of every profile's runtime state.
-
-    List pages consume this single payload instead of issuing one
-    runtime HTTP request per profile.
-    """
-    runtimes = await service.list_runtimes()
+    """t098: compact read model for the global coordinator-error
+    banner — only profiles with a live coordinator error are listed.
+    Row runtime state itself travels with the bounded collection
+    (t098); the former all-profiles runtime summary is gone."""
     coordinator = getattr(request.app.state, "coordinator", None)
-    entries = [
-        RuntimeSummaryEntry(
-            profile_id=rt.profile_id,
-            desired_state=rt.desired_state,
-            observed_state=rt.observed_state,
-            config_version=rt.config_version,
-            runtime_instance_id=rt.runtime_instance_id,
-            failure_count=rt.failure_count,
-            restart_blocked=rt.restart_blocked,
-            last_started_at=rt.last_started_at,
-            last_stopped_at=rt.last_stopped_at,
-            preview_captured_at=rt.preview_captured_at,
-            last_coordinator_error=(
-                coordinator.get_last_error(rt.profile_id, runtime=rt)
-                if coordinator is not None
-                else None
-            ),
-            updated_at=rt.updated_at,
-        )
-        for rt in runtimes
-    ]
-    return RuntimeSummaryResponse(
-        entries=entries,
-        running_count=sum(
-            1 for e in entries if e.observed_state == "running"
-        ),
-    )
+    if coordinator is None:
+        return RuntimeAlertsResponse(entries=[])
+    entries = await service.list_coordinator_errors(coordinator)
+    return RuntimeAlertsResponse(entries=entries)
 
 
 @profile_router.get(

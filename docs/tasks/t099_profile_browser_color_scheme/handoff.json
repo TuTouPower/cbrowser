@@ -1,0 +1,18 @@
+{
+  "tid": "t099",
+  "attempt": 1,
+  "execution_id": "2aabb4272f2d4258824da5c437ef1423",
+  "status": "done",
+  "branch": "t099_profile_browser_color_scheme",
+  "base_sha": "4e007a694f1b5d3ada39ee29caa687df8198727f",
+  "spec_source_sha": "4e007a694f1b5d3ada39ee29caa687df8198727f",
+  "tests": "门禁 gate-t099-final1——protocol/requirements/design×2/contract/frontend_build exit 0；unit 2430 passed、5 failed + 10 errors 与云端基线集逐条一致；integration 220 passed、11 errors 为子进程就绪 flake（单跑 11/11 过）；frontend_test 739 passed、3 超时 flake（单跑 24/24 过）。审阅轮 1 后补入的两条看护用例定向复跑全过（后端 5/5、前端 19/19）",
+  "blackbox": "云端无 Docker/真实引擎，真机黑盒验证延期本地（p162/p163）；写入机制已由 spike s027 在固定引擎实测成立",
+  "review": "single 两轮，轮 2 PASS、零未处置 finding（轮 1 两条 minor 全部已修并经轮 2 复核消除，含基线可红实证）",
+  "review_scope": "5feee318d150cb78",
+  "pending": [
+    "p162",
+    "p163"
+  ],
+  "findings": []
+}

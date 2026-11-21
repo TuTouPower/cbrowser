@@ -1,7 +1,7 @@
 ---
 slug: browser_isolation
 status: active
-tasks: [baseline, t003, t041, t051, t075, t080]
+tasks: [baseline, t003, t041, t051, t075, t080, t097]
 ---
 # 需求规范：浏览器沙箱与数据隔离 (browser_isolation)
 
@@ -27,6 +27,7 @@ tasks: [baseline, t003, t041, t051, t075, t080]
     - `com.cbrowser.config-version={version}`
     - `com.cbrowser.prefix={prefix}`
 - Stream Runtime 的 UDP mux 端口当前仅发布到宿主回环 `127.0.0.1`；本机 Chrome 可直连，跨机或公网直连需在部署阶段调整绑定与网络策略。
+- 策略执行边界（t097）：常驻 Policy Agent 只服务 Browser（容器名 `{prefix}-{NNNN}-policy-agent`，与沙箱同属 `{prefix}-profiles` 分组、service `{NNNN}-policy-agent`，标签含展示编号）；Stream 不设 Policy Agent，其网络隔离由 per-Profile internal 媒体网络拓扑承担（见 webrtc_remote_display 的拓扑隔离条目）。新版本收敛时存量 Stream Agent 一律删除、旧形状 Browser Agent 一次性替换为现行形状，身份仍以 deployment/profile/instance/config version/目标容器标签全等校验，不按名称或分组清理其它对象。
 - 容器只能由特权受限的 `cbrowser-supervisor` 创建与管理，外部客户端无法传入自定义镜像、宿主机挂载或容器命令。
 
 ### 2.2 宿主机数据目录隔离

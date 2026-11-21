@@ -11,6 +11,7 @@ import { defaultApiClient, ApiClient } from "../../shared/api/client";
 import { useActionKeyMutation } from "../../shared/api/action_key_mutation";
 import type {
   CandidateEntry,
+  ProfileCollectionItem,
   ProfileCollectionPage,
   ProfileControlStateData,
   ProfileDeletionBatchResponse,
@@ -18,7 +19,9 @@ import type {
   ProfileResponse,
   ProfileCreateRequest,
   ProfileUpdateRequest,
+  ProfileRuntimeProjection,
   ProfileRuntimeResponse,
+  ProfileRuntimeStatusEvent,
   ProxyCollectionPage,
   ProxyCandidateEntry,
   ProxyCountryRange,
@@ -27,8 +30,7 @@ import type {
   ProxyProbeJobAccepted,
   ProxyProbeJobMember,
   ProxyProbeJobRequest,
-  RuntimeSummaryResponse,
-  RuntimeSummaryEntry,
+  RuntimeAlertsResponse,
   GroupResponse,
   GroupCreateRequest,
   GroupUpdateRequest,
@@ -44,7 +46,7 @@ export const profileKeys = {
   lists: () => [...profileKeys.all, "list"] as const,
   detail: (id: string) => [...profileKeys.all, "detail", id] as const,
   runtime: (id: string) => [...profileKeys.all, "runtime", id] as const,
-  runtimeSummary: () => [...profileKeys.all, "runtime-summary"] as const,
+  runtimeAlerts: () => [...profileKeys.all, "runtime-alerts"] as const,
   collection: (params: object) =>
     [...profileKeys.all, "collection", params] as const,
   /** t076 review f003: prefix covering every collection page. */
@@ -104,14 +106,51 @@ export interface ProfilesCollectionParams {
   page_size?: number;
 }
 
+/** t098 (test review f001): a collection response requested before a
+ * runtime event landed carries older per-row projections. When the
+ * response lands it must not roll rows back: each row's projection is
+ * fence-merged against the currently cached row, keeping the higher
+ * revision (a missing projection is no information, never a deletion).
+ * Membership, totals and profile fields always come from the fresh
+ * response — only the runtime projection is revision-guarded. */
+export function mergeFetchedCollectionItems(
+  fetched: ProfileCollectionItem[],
+  cached: ProfileCollectionItem[] | undefined,
+): ProfileCollectionItem[] {
+  if (!cached) return fetched;
+  const cachedById = new Map(cached.map((item) => [item.id, item]));
+  return fetched.map((item) => {
+    const old = cachedById.get(item.id);
+    if (!old?.runtime) return item;
+    if (!item.runtime) return { ...item, runtime: old.runtime };
+    return runtimeFenceAllows(old.runtime, item.runtime)
+      ? item
+      : { ...item, runtime: old.runtime };
+  });
+}
+
 /** t076 AC-001: bounded server-side profile page. */
 export function useProfilesCollectionQuery(
   params: ProfilesCollectionParams,
   client: ApiClient = defaultApiClient,
 ): UseQueryResult<ProfileCollectionPage, Error> {
+  const queryClient = useQueryClient();
   return useQuery({
     queryKey: profileKeys.collection(params),
-    queryFn: () => client.profiles.listCollection(params),
+    queryFn: async () => {
+      const page = await client.profiles.listCollection(params);
+      const cached = queryClient.getQueryData<ProfileCollectionPage>(
+        profileKeys.collection(params),
+      );
+      if (!cached) return page;
+      return {
+        ...page,
+        items: mergeFetchedCollectionItems(
+          page.items ?? [],
+          cached.items ?? [],
+        ),
+      };
+    },
   });
 }
 
@@ -125,11 +164,13 @@ export function useProfilesCollectionQuery(
 export function useAllProfilesCollectionQuery(
   params: Omit<ProfilesCollectionParams, "page">,
   client: ApiClient = defaultApiClient,
-): UseQueryResult<ProfileResponse[], Error> {
+): UseQueryResult<ProfileCollectionItem[], Error> {
+  const queryClient = useQueryClient();
+  const queryKey = [...profileKeys.collection(params), "all-pages"] as const;
   return useQuery({
-    queryKey: [...profileKeys.collection(params), "all-pages"] as const,
+    queryKey,
     queryFn: async () => {
-      const items: ProfileResponse[] = [];
+      const items: ProfileCollectionItem[] = [];
       let page = 1;
       for (;;) {
         const chunk = await client.profiles.listCollection({
@@ -150,19 +191,25 @@ export function useAllProfilesCollectionQuery(
         }
         page += 1;
       }
-      return items;
+      // Same landing guard as the paged query (test review f001):
+      // events merged during the walk must survive its result.
+      const cached =
+        queryClient.getQueryData<ProfileCollectionItem[]>(queryKey);
+      return cached ? mergeFetchedCollectionItems(items, cached) : items;
     },
   });
 }
 
-/** t076 AC-002: one batched runtime read for all profiles. */
-export function useRuntimeSummaryQuery(
+/** t098: compact read model for the global coordinator-error banner —
+ * only profiles with a live coordinator error. Row runtime state
+ * travels with the collection page itself. */
+export function useRuntimeAlertsQuery(
   client: ApiClient = defaultApiClient,
   options: { enabled?: boolean } = {},
-): UseQueryResult<RuntimeSummaryResponse, Error> {
+): UseQueryResult<RuntimeAlertsResponse, Error> {
   return useQuery({
-    queryKey: profileKeys.runtimeSummary(),
-    queryFn: () => client.profiles.getRuntimeSummary(),
+    queryKey: profileKeys.runtimeAlerts(),
+    queryFn: () => client.profiles.getRuntimeAlerts(),
     enabled: options.enabled ?? true,
   });
 }
@@ -453,6 +500,7 @@ export function useSetDesiredStateMutation(
       client.profiles.setDesiredState(input.id, input.state, actionKey),
     onSuccess: (data, { input }) => {
       queryClient.setQueryData(profileKeys.runtime(input.id), data);
+      applyRuntimeResponseToCollections(queryClient, data);
       invalidateProfileLists(queryClient);
     },
   });
@@ -502,6 +550,7 @@ export function useStopProfileMutation(
       client.profiles.stop(input, actionKey),
     onSuccess: (data, { input }) => {
       queryClient.setQueryData(profileKeys.runtime(input), data);
+      applyRuntimeResponseToCollections(queryClient, data);
       invalidateProfileLists(queryClient);
     },
   });
@@ -654,26 +703,327 @@ export function useApplyDisplaySettingsMutation(
     },
     onSuccess: (data, { input: id }) => {
       queryClient.setQueryData(profileKeys.runtime(id), data);
+      applyRuntimeResponseToCollections(queryClient, data);
       invalidateProfileLists(queryClient);
       queryClient.invalidateQueries({ queryKey: profileKeys.detail(id) });
     },
   });
 }
 
-/** Fields shared by one per-profile runtime response and one
- * batched summary entry — an SSE runtime event merges into both from
- * the same fields (t076 review f001/f002). */
+/** Fields shared by the per-profile runtime response and a
+ * collection row's runtime projection — an SSE runtime event merges
+ * into both from the same fields. */
 interface RuntimeSharedFields {
   desired_state: "stopped" | "running";
   observed_state: "stopped" | "starting" | "running" | "stopping" | "error";
   runtime_instance_id?: string | null;
   config_version: number;
+  state_revision?: number;
   failure_count: number;
   restart_blocked: boolean;
   last_started_at?: string | null;
   last_stopped_at?: string | null;
   last_coordinator_error?: string | null;
   updated_at: string;
+}
+
+interface RuntimeFenceFields {
+  state_revision?: number | null;
+  config_version: number;
+  runtime_instance_id?: string | null;
+}
+
+/** t098: the single fence shared by collection reads, operation
+ * results and SSE events. ``state_revision`` is a per-profile
+ * monotonic counter bumped on every runtime write, so it decides on
+ * its own whenever both sides carry it — an instance replacement at
+ * the same config version, or a config rollback, can no longer slip
+ * an older fact past it. The config-version + instance pair remains
+ * only as the fallback for a peer that predates the revision. */
+export function runtimeFenceAllows(
+  cached: RuntimeFenceFields,
+  incoming: RuntimeFenceFields,
+): boolean {
+  if (cached.state_revision != null && incoming.state_revision != null) {
+    return incoming.state_revision >= cached.state_revision;
+  }
+  const incomingVersion = incoming.config_version ?? cached.config_version;
+  if (incomingVersion < cached.config_version) return false;
+  if (
+    incomingVersion === cached.config_version &&
+    incoming.runtime_instance_id != null &&
+    cached.runtime_instance_id != null &&
+    incoming.runtime_instance_id !== cached.runtime_instance_id
+  ) {
+    return false;
+  }
+  return true;
+}
+
+type ObservedState = ProfileRuntimeProjection["observed_state"];
+
+/** Whether an observed state belongs to a collection page's status
+ * filter bucket (mirrors the server-side bucketing). Only the status
+ * filter couples membership to runtime state. */
+function statusBucketIncludes(
+  status: string | undefined,
+  observed: ObservedState,
+): boolean {
+  switch (status) {
+    case undefined:
+    case "all":
+      return true;
+    case "running":
+      return observed === "running" || observed === "starting";
+    case "running_exact":
+      return observed === "running";
+    case "stopped":
+      return observed === "stopped" || observed === "stopping";
+    case "error":
+      return observed === "error";
+    default:
+      return true;
+  }
+}
+
+function projectionFromEvent(
+  event: ProfileRuntimeStatusEvent,
+): ProfileRuntimeProjection {
+  return {
+    desired_state: event.desired_state,
+    observed_state: event.observed_state,
+    config_version: event.config_version ?? 1,
+    state_revision: event.state_revision ?? 0,
+    runtime_instance_id: event.runtime_instance_id ?? null,
+    failure_count: event.failure_count ?? 0,
+    restart_blocked: event.restart_blocked ?? false,
+    last_started_at: event.last_started_at ?? null,
+    last_stopped_at: event.last_stopped_at ?? null,
+    preview_captured_at: null,
+    last_coordinator_error: event.last_coordinator_error ?? null,
+    updated_at: event.updated_at,
+  };
+}
+
+function mergeProjection(
+  base: ProfileRuntimeProjection,
+  event: ProfileRuntimeStatusEvent,
+): ProfileRuntimeProjection {
+  return {
+    ...base,
+    desired_state: event.desired_state ?? base.desired_state,
+    observed_state: event.observed_state ?? base.observed_state,
+    runtime_instance_id:
+      event.runtime_instance_id !== undefined
+        ? event.runtime_instance_id
+        : base.runtime_instance_id,
+    config_version: event.config_version ?? base.config_version,
+    state_revision: event.state_revision ?? base.state_revision,
+    failure_count: event.failure_count ?? base.failure_count,
+    restart_blocked: event.restart_blocked ?? base.restart_blocked,
+    last_started_at:
+      event.last_started_at !== undefined
+        ? event.last_started_at
+        : base.last_started_at,
+    last_stopped_at:
+      event.last_stopped_at !== undefined
+        ? event.last_stopped_at
+        : base.last_stopped_at,
+    last_coordinator_error:
+      event.last_coordinator_error !== undefined
+        ? event.last_coordinator_error
+        : base.last_coordinator_error,
+    updated_at: event.updated_at ?? base.updated_at,
+  };
+}
+
+function projectionsEqual(
+  a: ProfileRuntimeProjection,
+  b: ProfileRuntimeProjection,
+): boolean {
+  return (
+    a.desired_state === b.desired_state &&
+    a.observed_state === b.observed_state &&
+    a.runtime_instance_id === b.runtime_instance_id &&
+    a.config_version === b.config_version &&
+    a.state_revision === b.state_revision &&
+    a.failure_count === b.failure_count &&
+    a.restart_blocked === b.restart_blocked &&
+    a.last_started_at === b.last_started_at &&
+    a.last_stopped_at === b.last_stopped_at &&
+    a.preview_captured_at === b.preview_captured_at &&
+    a.last_coordinator_error === b.last_coordinator_error &&
+    a.updated_at === b.updated_at
+  );
+}
+
+interface CollectionCacheHit {
+  queryKey: readonly unknown[];
+  isAllPages: boolean;
+  params: ProfilesCollectionParams;
+  page: ProfileCollectionPage | null;
+  items: ProfileCollectionItem[];
+  index: number;
+}
+
+function collectionCaches(
+  queryClient: QueryClient,
+): CollectionCacheHit[] {
+  const hits: CollectionCacheHit[] = [];
+  const caches = queryClient.getQueriesData<unknown>({
+    queryKey: profileKeys.collectionPrefix(),
+  });
+  for (const [queryKey, data] of caches) {
+    if (!data) continue;
+    const isAllPages = queryKey[queryKey.length - 1] === "all-pages";
+    const params = (queryKey[2] ?? {}) as ProfilesCollectionParams;
+    if (isAllPages) {
+      const items = data as ProfileCollectionItem[];
+      hits.push({
+        queryKey,
+        isAllPages,
+        params,
+        page: null,
+        items,
+        index: -1,
+      });
+    } else {
+      const page = data as ProfileCollectionPage;
+      hits.push({
+        queryKey,
+        isAllPages,
+        params,
+        page,
+        items: page.items ?? [],
+        index: -1,
+      });
+    }
+  }
+  return hits;
+}
+
+function writeCollectionCache(
+  queryClient: QueryClient,
+  hit: CollectionCacheHit,
+  items: ProfileCollectionItem[],
+): void {
+  if (hit.isAllPages) {
+    queryClient.setQueryData(hit.queryKey, items);
+  } else {
+    queryClient.setQueryData(hit.queryKey, { ...hit.page, items });
+  }
+}
+
+/** t098: merge one runtime event into every cached collection page,
+ * in place, under the shared revision fence. Rows are only ever
+ * updated — an event never synthesizes a row (a late event for a
+ * deleted or off-page profile cannot resurrect it). When the merged
+ * state crosses the page's status-filter boundary, or a non-member's
+ * new state enters the page's status bucket, the page is invalidated
+ * so the server reconverges membership and total. Returns whether
+ * anything changed (a duplicate/stale event changes nothing and must
+ * have no side effects). */
+export function applyRuntimeEventToCollections(
+  queryClient: QueryClient,
+  event: ProfileRuntimeStatusEvent,
+  options: { suppressInvalidation?: boolean } = {},
+): boolean {
+  let changed = false;
+  for (const hit of collectionCaches(queryClient)) {
+    const index = hit.items.findIndex((item) => item.id === event.profile_id);
+    if (index === -1) {
+      // Only a status-filtered page can gain a member from a state
+      // change; unfiltered membership is driven by create/delete.
+      if (
+        !options.suppressInvalidation &&
+        hit.params.status &&
+        hit.params.status !== "all" &&
+        statusBucketIncludes(hit.params.status, event.observed_state)
+      ) {
+        queryClient.invalidateQueries({ queryKey: hit.queryKey });
+        changed = true;
+      }
+      continue;
+    }
+    const item = hit.items[index];
+    if (!item) continue;
+    if (item.runtime && !runtimeFenceAllows(item.runtime, event)) continue;
+    const nextRuntime = item.runtime
+      ? mergeProjection(item.runtime, event)
+      : projectionFromEvent(event);
+    if (item.runtime && projectionsEqual(nextRuntime, item.runtime)) {
+      continue;
+    }
+    const wasIn = item.runtime
+      ? statusBucketIncludes(hit.params.status, item.runtime.observed_state)
+      : true;
+    const isIn = statusBucketIncludes(
+      hit.params.status,
+      nextRuntime.observed_state,
+    );
+    if (wasIn !== isIn && !options.suppressInvalidation) {
+      queryClient.invalidateQueries({ queryKey: hit.queryKey });
+      changed = true;
+      continue;
+    }
+    const nextItems = hit.items.slice();
+    nextItems[index] = { ...item, runtime: nextRuntime };
+    writeCollectionCache(queryClient, hit, nextItems);
+    changed = true;
+  }
+  return changed;
+}
+
+/** t098: an operation result (start/stop/apply response) merges into
+ * cached collection rows under the same revision fence — a repeated
+ * same-revision result never rolls a row that has since advanced
+ * back. Filter-boundary crossings invalidate the page instead. */
+export function applyRuntimeResponseToCollections(
+  queryClient: QueryClient,
+  runtime: ProfileRuntimeResponse,
+): void {
+  for (const hit of collectionCaches(queryClient)) {
+    const index = hit.items.findIndex(
+      (item) => item.id === runtime.profile_id,
+    );
+    if (index === -1) continue;
+    const item = hit.items[index];
+    if (!item) continue;
+    if (item.runtime && !runtimeFenceAllows(item.runtime, runtime)) {
+      continue;
+    }
+    const nextRuntime: ProfileRuntimeProjection = {
+      desired_state: runtime.desired_state,
+      observed_state: runtime.observed_state,
+      config_version: runtime.config_version,
+      state_revision: runtime.state_revision ?? 0,
+      runtime_instance_id: runtime.runtime_instance_id ?? null,
+      failure_count: runtime.failure_count,
+      restart_blocked: runtime.restart_blocked,
+      last_started_at: runtime.last_started_at ?? null,
+      last_stopped_at: runtime.last_stopped_at ?? null,
+      preview_captured_at: runtime.preview_captured_at ?? null,
+      last_coordinator_error: runtime.last_coordinator_error ?? null,
+      updated_at: runtime.updated_at,
+    };
+    if (item.runtime && projectionsEqual(nextRuntime, item.runtime)) {
+      continue;
+    }
+    const wasIn = item.runtime
+      ? statusBucketIncludes(hit.params.status, item.runtime.observed_state)
+      : true;
+    const isIn = statusBucketIncludes(
+      hit.params.status,
+      nextRuntime.observed_state,
+    );
+    if (wasIn !== isIn) {
+      queryClient.invalidateQueries({ queryKey: hit.queryKey });
+      continue;
+    }
+    const nextItems = hit.items.slice();
+    nextItems[index] = { ...item, runtime: nextRuntime };
+    writeCollectionCache(queryClient, hit, nextItems);
+  }
 }
 
 export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
@@ -684,51 +1034,12 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
       const old = queryClient.getQueryData<ProfileRuntimeResponse>(
         profileKeys.runtime(event.profile_id),
       );
-      const summary = queryClient.getQueryData<RuntimeSummaryResponse>(
-        profileKeys.runtimeSummary(),
-      );
-      const summaryEntry = summary?.entries.find(
-        (entry) => entry.profile_id === event.profile_id,
-      );
-      // t076 review f001: the summary update is decoupled from the
-      // per-profile runtime cache. List/entry pages read only the
-      // batched summary, so on first open the runtime cache is empty
-      // and the old early return discarded every event. The runtime
-      // entry itself is still never synthesized from an event.
-      // t076 review f009: each cache fences by its OWN version and
-      // instance. The two caches usually disagree on version (the
-      // summary is refetched on every list focus/remount; the runtime
-      // cache only on a detail visit), so one fence taken from
-      // whichever cache exists first lets a late event roll the newer
-      // cache back to old data. An event below a cache's version, or
-      // from a different instance at the same version, skips that
-      // cache only and may still update the other one.
-      if (!old && !summaryEntry) return;
-      const fenceAllows = (cached: {
-        config_version: number;
-        runtime_instance_id?: string | null;
-      }): boolean => {
-        // Events without a version predate the fence and are treated
-        // as current for this cache.
-        const eventVersion = event.config_version ?? cached.config_version;
-        if (eventVersion < cached.config_version) return false;
-        if (
-          eventVersion === cached.config_version &&
-          event.runtime_instance_id != null &&
-          cached.runtime_instance_id != null &&
-          event.runtime_instance_id !== cached.runtime_instance_id
-        ) {
-          return false;
-        }
-        return true;
-      };
-      const runtimeAllowed = old ? fenceAllows(old) : false;
-      const summaryAllowed = summaryEntry ? fenceAllows(summaryEntry) : false;
-      if (!runtimeAllowed && !summaryAllowed) return;
-      // t076 review f002: the event's start/stop timestamps, failure
-      // count, restart flag and updated timestamp travel into both
-      // caches; a time-only event is a real change, not a duplicate.
-      // A field the event omits keeps the cached value.
+      // t098: each cache fences by its OWN revision. The caches
+      // usually disagree (a collection page is refetched on focus;
+      // the runtime cache only on a detail visit), so one fence taken
+      // from whichever cache exists first would let a late event roll
+      // the newer cache back. An event below a cache's revision
+      // skips that cache only and may still update the other one.
       const mergeShared = <T extends RuntimeSharedFields>(base: T): T => ({
         ...base,
         desired_state: event.desired_state ?? base.desired_state,
@@ -738,6 +1049,7 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
             ? event.runtime_instance_id
             : base.runtime_instance_id,
         config_version: event.config_version ?? base.config_version,
+        state_revision: event.state_revision ?? base.state_revision,
         failure_count: event.failure_count ?? base.failure_count,
         restart_blocked: event.restart_blocked ?? base.restart_blocked,
         last_started_at:
@@ -762,6 +1074,7 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
         next.desired_state !== base.desired_state ||
         next.runtime_instance_id !== base.runtime_instance_id ||
         next.config_version !== base.config_version ||
+        next.state_revision !== base.state_revision ||
         next.failure_count !== base.failure_count ||
         next.restart_blocked !== base.restart_blocked ||
         next.last_started_at !== base.last_started_at ||
@@ -770,11 +1083,10 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
         next.updated_at !== base.updated_at;
       // Per-profile runtime entry: update in place when cached, never
       // synthesize one from an event — and only when this cache's own
-      // fence let the event through (t076 review f009).
-      let nextRuntime: ProfileRuntimeResponse | undefined;
+      // fence let the event through.
       let runtimeChanged = false;
-      if (old && runtimeAllowed) {
-        nextRuntime = {
+      if (old && runtimeFenceAllows(old, event)) {
+        const nextRuntime: ProfileRuntimeResponse = {
           ...mergeShared(old),
           search_defaults:
             event.search_defaults !== undefined
@@ -800,49 +1112,51 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
           nextRuntime.control !== old.control ||
           nextRuntime.search_defaults !== old.search_defaults ||
           nextRuntime.transport !== old.transport;
+        if (runtimeChanged) {
+          queryClient.setQueryData(
+            profileKeys.runtime(event.profile_id),
+            nextRuntime,
+          );
+        }
       }
-      // Batched summary entry: the same merge, the same duplicate
-      // guard — list/entry pages stay correct without a refetch —
-      // and only when this entry's own fence let the event through
-      // (t076 review f009).
-      let nextEntry: RuntimeSummaryEntry | undefined;
-      let entryChanged = false;
-      if (summaryEntry && summaryAllowed) {
-        nextEntry = mergeShared(summaryEntry);
-        entryChanged = sharedChanged(nextEntry, summaryEntry);
-      }
-      // t076 AC-003: a duplicate/replayed event that changes nothing
-      // has no side effects — in particular it must not trigger a
-      // full list refetch.
-      if (!runtimeChanged && !entryChanged) return;
-      if (nextRuntime && runtimeChanged) {
-        queryClient.setQueryData(
-          profileKeys.runtime(event.profile_id),
-          nextRuntime,
+      // Collection rows: the same event merges into every cached
+      // page under the same fence (t098). A duplicate or stale event
+      // changes nothing anywhere and has no side effects — in
+      // particular it must not trigger a refetch.
+      // t098 (code review f001/f002): state_revision is monotonic per
+      // profile across instances, so when the runtime cache knows a
+      // strictly newer revision than this event carries, the event is
+      // history. Its field merges still apply per-row under each
+      // row's own fence (the caches legitimately disagree), but its
+      // side effects are suppressed: it must not invalidate
+      // collection pages or the alerts model. Without a runtime
+      // cache entry there is no fresher witness and nothing is
+      // suppressed.
+      const eventIsHistory =
+        old != null && !runtimeFenceAllows(old, event);
+      applyRuntimeEventToCollections(queryClient, event, {
+        suppressInvalidation: eventIsHistory,
+      });
+      // Global coordinator-error banner: the compact alerts read
+      // model is invalidated only when this event actually changes
+      // the profile's alert membership/message.
+      if (!eventIsHistory && event.last_coordinator_error !== undefined) {
+        const alerts = queryClient.getQueryData<RuntimeAlertsResponse>(
+          profileKeys.runtimeAlerts(),
         );
-      }
-      if (summary && nextEntry && entryChanged) {
-        queryClient.setQueryData<RuntimeSummaryResponse>(
-          profileKeys.runtimeSummary(),
-          {
-            ...summary,
-            entries: summary.entries.map((entry) =>
-              entry.profile_id === event.profile_id ? nextEntry! : entry,
-            ),
-            running_count: summary.entries.reduce(
-              (count, entry) =>
-                count +
-                (entry.profile_id === event.profile_id
-                  ? nextEntry!.observed_state === "running"
-                    ? 1
-                    : 0
-                  : entry.observed_state === "running"
-                    ? 1
-                    : 0),
-              0,
-            ),
-          },
-        );
+        if (alerts) {
+          const existing = alerts.entries.find(
+            (entry) => entry.profile_id === event.profile_id,
+          );
+          if (
+            (existing?.last_coordinator_error ?? null) !==
+            event.last_coordinator_error
+          ) {
+            queryClient.invalidateQueries({
+              queryKey: profileKeys.runtimeAlerts(),
+            });
+          }
+        }
       }
     });
 
@@ -873,8 +1187,8 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
         if (profile?.capture_preview !== true) return;
         const captured = Date.parse(event.captured_at);
         if (!Number.isFinite(captured)) return;
-        // t076 review f002: a preview capture also moves the summary
-        // entry the list rows render, under the same "captured time
+        // A preview capture also moves the collection row's
+        // projection the list renders, under the same "captured time
         // never goes backwards" fence as the runtime entry.
         queryClient.setQueryData(
           profileKeys.runtime(event.profile_id),
@@ -887,29 +1201,27 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
             return { ...old, preview_captured_at: event.captured_at };
           },
         );
-        queryClient.setQueryData<RuntimeSummaryResponse>(
-          profileKeys.runtimeSummary(),
-          (summary) => {
-            if (!summary) return summary;
-            const entry = summary.entries.find(
-              (item) => item.profile_id === event.profile_id,
-            );
-            if (!entry) return summary;
-            const previous = entry.preview_captured_at
-              ? Date.parse(entry.preview_captured_at)
-              : NaN;
-            if (Number.isFinite(previous) && captured <= previous)
-              return summary;
-            return {
-              ...summary,
-              entries: summary.entries.map((item) =>
-                item.profile_id === event.profile_id
-                  ? { ...item, preview_captured_at: event.captured_at }
-                  : item,
-              ),
-            };
-          },
-        );
+        for (const hit of collectionCaches(queryClient)) {
+          const index = hit.items.findIndex(
+            (item) => item.id === event.profile_id,
+          );
+          if (index === -1) continue;
+          const item = hit.items[index];
+          if (!item || !item.runtime) continue;
+          const previous = item.runtime.preview_captured_at
+            ? Date.parse(item.runtime.preview_captured_at)
+            : NaN;
+          if (Number.isFinite(previous) && captured <= previous) continue;
+          const nextItems = hit.items.slice();
+          nextItems[index] = {
+            ...item,
+            runtime: {
+              ...item.runtime,
+              preview_captured_at: event.captured_at,
+            },
+          };
+          writeCollectionCache(queryClient, hit, nextItems);
+        }
       });
 
     // t056 A31: another client's group/proxy write arrives as a

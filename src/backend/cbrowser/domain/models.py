@@ -843,6 +843,11 @@ class ProfileRuntimeResponse(BaseModel):
     observed_state: ObservedState
     runtime_instance_id: str | None
     config_version: int
+    # t098: per-profile monotonic revision (DB column, bumped on every
+    # runtime write). Collection reads, operation results and SSE events
+    # all fence on this one counter, so their arrival order cannot roll
+    # a consumer back to older state.
+    state_revision: int = 0
     failure_count: int
     restart_blocked: bool
     last_exit_event_id: str | None
@@ -870,6 +875,9 @@ class ProfileRuntimeStatusEvent(BaseModel):
     # t076 AC-003: the bound config version travels with every event so
     # consumers can fence stale events from an old instance/config.
     config_version: int = 1
+    # t098: the monotonic state revision travels too; it is the single
+    # fence shared with collection reads and operation results.
+    state_revision: int = 0
     failure_count: int = 0
     restart_blocked: bool = False
     last_started_at: str | None = None
@@ -932,6 +940,9 @@ class ProxyUsedByEntry(BaseModel):
     profile_id: str
     name: str
     kind: ProxyReferenceKind
+    # t098: the referenced profile's runtime state travels with the
+    # reference data itself; ``None`` means no runtime fact is held.
+    observed_state: ObservedState | None
 
 
 class ProxyUsedByResponse(BaseModel):
@@ -943,17 +954,19 @@ class ProxyUsedByResponse(BaseModel):
     entries: list[ProxyUsedByEntry]
 
 
-class RuntimeSummaryEntry(BaseModel):
-    """One profile's runtime state for the batched summary (t076 AC-002):
-    list pages read this single payload instead of one HTTP request
-    per profile.  It carries every field the list rows render, so no
-    per-row read is needed."""
+class ProfileRuntimeProjection(BaseModel):
+    """One collection row's runtime state (t098): the bounded page
+    delivers the runtime projection alongside the config row, so list,
+    card, session-entry and switcher consumers read state from the
+    collection itself instead of a separate all-profiles summary.
+    ``state_revision`` is the monotonic fence shared with operation
+    results and SSE events."""
 
     model_config = ConfigDict(extra="forbid")
-    profile_id: str
     desired_state: DesiredState
     observed_state: ObservedState
     config_version: int = 1
+    state_revision: int = 0
     runtime_instance_id: str | None = None
     failure_count: int = 0
     restart_blocked: bool = False
@@ -963,14 +976,47 @@ class RuntimeSummaryEntry(BaseModel):
     last_coordinator_error: str | None = None
     updated_at: str = ""
 
+    @classmethod
+    def from_runtime(cls, rt: "ProfileRuntime") -> "ProfileRuntimeProjection":
+        return cls(
+            desired_state=rt.desired_state,
+            observed_state=rt.observed_state,
+            config_version=rt.config_version,
+            state_revision=rt.state_revision,
+            runtime_instance_id=rt.runtime_instance_id,
+            failure_count=rt.failure_count,
+            restart_blocked=rt.restart_blocked,
+            last_started_at=rt.last_started_at,
+            last_stopped_at=rt.last_stopped_at,
+            preview_captured_at=rt.preview_captured_at,
+            updated_at=rt.updated_at,
+        )
 
-class RuntimeSummaryResponse(BaseModel):
+
+class ProfileCollectionItem(ProfileResponse):
+    """One row of the bounded profile collection (t098): the config
+    row plus its runtime projection. ``runtime`` is required but
+    nullable — ``None`` means the server holds no runtime fact for the
+    row, and consumers must present an explicit unknown instead of
+    filling in a guessed state."""
+
+    runtime: ProfileRuntimeProjection | None
+
+
+class CoordinatorErrorEntry(BaseModel):
+    """One profile with a live coordinator error (t098 compact read
+    model for the global banner: only errored profiles are listed)."""
+
     model_config = ConfigDict(extra="forbid")
-    # Required, not defaulted: see ProxyUsedByResponse above — a default
-    # drops the field from the schema's `required` list and the
-    # generated client types it optional.
-    entries: list[RuntimeSummaryEntry]
-    running_count: int = 0
+    profile_id: str
+    # Required, not defaulted: see ProxyUsedByResponse above.
+    last_coordinator_error: str
+
+
+class RuntimeAlertsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # Required, not defaulted: see ProxyUsedByResponse above.
+    entries: list[CoordinatorErrorEntry]
 
 
 class ProxyCountryRange(BaseModel):

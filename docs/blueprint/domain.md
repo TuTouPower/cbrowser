@@ -24,7 +24,7 @@
 |**指纹平台**|`ProfileConfig.fingerprint_platform`|Profile 绑定的反指纹目标平台，取值 `windows`（默认）/ `macos`；CloakBrowser 只支持这两种，无 Linux 平台。属运行配置，变更产生新 `ProfileConfigVersion`（t041）。|
 |**平台字体集**|`ProfileConfig.font_set_id`|对同平台、按内容寻址的不可变字体集的引用；t075 起为后端托管绑定（创建/克隆/切平台由服务按目录默认规则解析，请求不接受该字段；字体根已配置的部署中恒有绑定，未配置字体根的进程可暂空但不可启动）。字体集只在运行时只读挂载，不进镜像与仓库；属运行配置，变更产生新 `ProfileConfigVersion`（t041 / t075）。Windows 环境从绑定字体集的原始 `SegUIVar.ttf` 公开 Text、Display、Small 光学命名实例，供网页按家族名匹配（t087）。|
 |**中文字体开关**|`ProfileConfig.include_cjk_fonts`|中文字体是否对 Browser 可见的显式开关；创建未给出时按语言派生（`zh-CN` 开、其余关），运行时 fontconfig 的中文裁剪只看此开关。属运行配置，变更产生新 `ProfileConfigVersion`（t075）。|
-|**配色方案**|`ProfileConfig.color_scheme`|只允许 `light` / `dark`（默认 `light`）；旧 `null` / `no-preference` 已由迁移 0013 统一映射为 `light`。属运行配置（t075 收敛）。|
+|**配色方案**|`ProfileConfig.color_scheme`|只允许 `light` / `dark`（默认 `light`）；旧 `null` / `no-preference` 已由迁移 0013 统一映射为 `light`。属运行配置（t075 收敛）；同一值同时派生网页配色偏好与浏览器原生外壳主题（t099）。|
 |**语言**|`ProfileConfig.locale`|Profile 的浏览器语言，封闭枚举 `zh-CN` / `en-US`（新建默认 `en-US`）。属运行配置，变更产生新 `ProfileConfigVersion`，重启后生效（t053）。|
 |**时区**|`ProfileConfig.timezone`|Profile 的时区，合法 IANA 时区名或 null（null 表示自动、随出口 IP）；非法时区在写入边界 422 拒绝。时区只决定语言联动的输入，不直接决定浏览器时区以外的行为（t053）。|
 
@@ -60,7 +60,7 @@
 
 - **集合投影**：环境 / 代理 / 分组列表由服务端集合页提供（搜索、筛选、稳定排序、总数、有界分页）；`CollectionPage` 的 `total` 计全量筛选集，`page_size` 钳制 1..100。有界候选按名称检索，`limit` 钳制 1..50；国家→城市范围以后端聚合为准，键为稳定国家代码，聚合口径与集合筛选一致：每代理只取最新且仍有效的观测（过期 ok 行不计入），不聚历史行。
 - **代理引用并集**：一个代理的使用环境 = 当前配置引用 ∪ 运行绑定版本引用，按环境去重，每项标 `current` / `bound` / `both`；计数、明细、导航与删除保护用同一语义。仅被运行绑定版本占用的环境仍计入并阻止删除；运行绑定解除（运行行删除）后即释放。引用聚合一次取 3 条 SELECT，不随规模增长；不通过删除运行绑定引用减少查询。
-- **运行摘要**：`RuntimeSummaryEntry` 是列表渲染所需的运行状态投影（含启停/预览捕获时间与协调器错误），由 `GET /api/v1/profiles/runtime-summary` 一次聚合返回；SSE 事件带 `config_version` 围栏，旧版本/旧实例事件不得覆盖新实例。
+- **运行投影（t098）**：`ProfileRuntimeProjection` 是列表渲染所需的运行状态投影（含启停/预览捕获时间、协调器错误与 `state_revision`），随有界集合页按行返回（`ProfileCollectionItem.runtime`，为空表示无运行事实）；SSE 事件、集合读取与操作结果共用 `state_revision` 单调围栏，旧修订事件不得覆盖新状态。
 - **集合选择范围**：批量操作目标按稳定 ID 与明确目标快照确定；表头全选只选当前页（`toggleAll` 为当前页语义），不以 DOM 行号或当前页数组下标作为身份。
 
 ## 删除意图与批量目标（t078）

@@ -2,10 +2,7 @@ import { Link } from "react-router";
 import { useI18n } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";
 import { Banner, Button, EmptyState, StatusBadge } from "../../shared/ui";
-import {
-  useAllProfilesCollectionQuery,
-  useRuntimeSummaryQuery,
-} from "../profiles/useProfilesQuery";
+import { useAllProfilesCollectionQuery } from "../profiles/useProfilesQuery";
 import { SESS_ENTRY_LINK, SESS_ENTRY_LIST, SESS_ENTRY_PAGE } from "./session_keys";
 
 export function SessionEntryPage() {
@@ -29,22 +26,15 @@ export function SessionEntryPage() {
     ? (profilesQuery.error?.message ?? t("runtimeStateUnknown"))
     : null;
 
-  // t076 AC-002: one batched summary read instead of one runtime
-  // request per profile.
-  const summaryQuery = useRuntimeSummaryQuery(client);
-  const runningIds = new Set(
-    (summaryQuery.data?.entries ?? [])
-      .filter((entry) => entry.observed_state === "running")
-      .map((entry) => entry.profile_id),
+  // t098: each collection row carries its runtime projection, so the
+  // exact "running, not starting" check reads the row itself — no
+  // second read, and a row without a runtime fact is not running.
+  const running = profiles.filter(
+    (profile) => profile.runtime?.observed_state === "running",
   );
-  const running = profiles.filter((profile) => runningIds.has(profile.id));
-  const runtimeError = summaryQuery.isError
-    ? (summaryQuery.error?.message ?? t("runtimeStateUnknown"))
-    : null;
-  const loading = profilesPending || summaryQuery.isPending;
+  const loading = profilesPending;
   const handleRetry = () => {
     if (profilesQuery.isError) void profilesQuery.refetch();
-    if (summaryQuery.isError) void summaryQuery.refetch();
   };
 
   // P2: profiles 失败才整页错误；单个 runtime 失败只顶栏提示，不阻塞
@@ -65,18 +55,6 @@ export function SessionEntryPage() {
         </Banner>
       ) : (
         <>
-          {runtimeError ? (
-            <Banner tone="danger" testId="sess-entry-error">
-              <span>{runtimeError}</span>
-              <Button
-                size="sm"
-                data-testid="sess-entry-retry"
-                onClick={handleRetry}
-              >
-                {t("retryAction")}
-              </Button>
-            </Banner>
-          ) : null}
           {loading ? (
             <p className="font-ui text-body-md text-on-surface-muted">
               {t("loading")}

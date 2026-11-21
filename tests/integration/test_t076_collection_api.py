@@ -196,18 +196,6 @@ def test_proxy_used_by_endpoint_uses_union(api_env):
     assert resp.status_code == 404
 
 
-def test_runtime_summary_single_payload(api_env):
-    client, headers = api_env["client"], api_env["headers"]
-    resp = client.get("/api/v1/profiles/runtime-summary", headers=headers)
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["running_count"] == 0
-    by_id = {e["profile_id"]: e for e in body["entries"]}
-    assert by_id[api_env["p_bound"]]["config_version"] == 1
-    assert by_id[api_env["p_bound"]]["runtime_instance_id"] == "inst-bound"
-    assert by_id[api_env["p_plain"]]["observed_state"] == "stopped"
-
-
 def test_proxy_candidates_and_countries(api_env):
     client, headers = api_env["client"], api_env["headers"]
     resp = client.get(

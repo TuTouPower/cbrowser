@@ -1,7 +1,7 @@
 ---
 slug: runtime_lifecycle
 status: active
-tasks: [baseline, t075, t076, t078, t082, t083, t091]
+tasks: [baseline, t075, t076, t078, t082, t083, t091, t097, t098]
 ---
 # 需求规范：Runtime 生命周期协调
 
@@ -11,8 +11,8 @@ tasks: [baseline, t075, t076, t078, t082, t083, t091]
 
 - API 是唯一 SQLite 写入者。Supervisor 经内部 Bearer RPC 获取不可变配置、绑定实例、上报观测和持久事件，不挂载数据库。只有 Supervisor 持有 Docker Socket。
 - 每个 Profile 独立 Browser/Stream 容器、用户数据、Xauthority、Pulse 与网络；Stream 仅共享对应 Browser IPC，不挂用户数据或 Browser Agent Socket。挂载必须规范化并保持所属 Profile，路径穿越、链接逃逸和跨 Profile 别名被拒绝。
-- Runtime 保持非 root、只读根、cap-drop ALL、restart policy no。启动前由该目标常驻的 Policy Agent（t082，ADR 039：仅 NET_ADMIN、只读根、与目标同 netns、UDS 协议）在其网络命名空间安装 IPv4/IPv6 策略，gate 确认实例、角色与 ready 标记后才执行业务入口。失败封闭，不修改宿主网络策略。
-- Browser 公共目的地址可达，私有/保留地址默认拒绝，代理只按配置地址/端口例外；Stream 只允许实际 Gateway 端点、本实例 UDP mux 与显式白名单，并允许同机直连所需的已建立流量；私有/保留地址仍默认拒绝。独立 bridge 本身不构成隔离证明。
+- Runtime 保持非 root、只读根、cap-drop ALL、restart policy no。Browser 启动前由其常驻 Policy Agent（t082，ADR 039：仅 NET_ADMIN、只读根、与目标同 netns、UDS 协议）在其网络命名空间安装 IPv4/IPv6 策略，gate 确认实例、角色与 ready 标记后才执行业务入口；失败封闭，不修改宿主网络策略。Stream 自 t097 起没有 Policy Agent、启动 gate 与已安装规则：它直接以镜像自有入口启动，隔离由 per-Profile internal 媒体网络拓扑本身保证（见下文媒体网络条目），Supervisor 稳态不巡检、修复或接管任何 Stream 策略。Policy Agent 只为 Browser 保留，容器名 `<prefix>-<NNNN>-policy-agent`、与沙箱同属 `<prefix>-profiles` 分组（service `<NNNN>-policy-agent`），身份仍以 deployment/profile/instance/config version/目标容器标签全等校验。
+- Browser 公共目的地址可达，私有/保留地址默认拒绝，代理只按配置地址/端口例外；Stream 不安装任何地址规则，其可达面由拓扑决定：仅同一 internal 媒体网络上的 Gateway 与经共享 IPC 的对应 Browser，媒体网络无默认路由与外部名称解析，出站隔离不依赖已安装规则。独立 bridge 本身不构成隔离证明。
 
 ## 运行意愿协调
 
@@ -20,10 +20,10 @@ tasks: [baseline, t075, t076, t078, t082, t083, t091]
 - Supervisor 不可达时运行意愿保留，错误经 API 响应与 SSE 显式报告；恢复后按退避重试收敛并清除错误。API 重启时对意愿与观测不一致的 Profile 重新收敛。
 - 未配置 Supervisor 时 API 默认显式禁用协调并报告；`CBROWSER_REQUIRE_SUPERVISOR=1` 时缺失配置拒绝启动，生产部署必须启用。
 
-## 集合运行摘要与 SSE 围栏（t076）
+## 集合运行投影与 SSE 围栏（t076，t098 修订）
 
-- `GET /api/v1/profiles/runtime-summary` 一次返回全部环境的运行摘要（`desired_state` / `observed_state` / `config_version` / 实例 / 失败计数 / 启停与预览捕获时间 / 协调器错误）与运行总数；列表、卡片、工作台入口与关闭的切换器只读它，不再按环境逐个请求 runtime。
-- SSE `runtime_state` 事件带 `config_version`：旧版本或旧实例的迟到事件丢弃，重复/重放事件无副作用且不触发列表重取；有效事件原地更新运行缓存与摘要缓存，重连后以服务端快照为准。
+- 运行状态随有界集合页交付（t098）：每行自带运行投影（含 `state_revision`），列表、卡片、工作台入口与切换器只读集合行，不再有全库运行摘要，也不再按环境逐个请求 runtime；全局协调器错误读紧凑读模型 `GET /api/v1/profiles/runtime-alerts`。
+- SSE `runtime_state` 事件带 `state_revision` 单调围栏（与集合读取、操作结果共用）：旧修订的迟到事件丢弃，重复/重放事件无副作用且不触发列表重取；有效事件原地更新运行缓存与集合行，重连后以服务端快照为准。
 
 ## 停止后删除协调（t078）
 
@@ -58,8 +58,8 @@ tasks: [baseline, t075, t076, t078, t082, t083, t091]
 
 ## 基础设施替换后的持续收敛与分层观测（t026）
 
-- 媒体网络固定端点规格：新建网络使用 Supervisor 分配的显式 subnet/ip_range，Gateway 附着在 range 外的固定端点；分配失败（池耗尽/冲突/端点被占/标签不符）显式失败，不退回随机地址。既有不合规网络经 Stream-only 替换重建迁移，Browser 容器、页面、IPC/X11 与 Profile 数据不变。
-- 稳态收敛只修复漂移层：附着漂移只重新附着；Stream 策略漂移或可修复的未注册走有界 Stream-only 替换；Browser 策略漂移立即 fail-closed 并报告 error、不自动 teardown；协议级注册拒绝（版本/凭证/身份/载荷/实例未绑定）不替换并报 failed；Gateway 不可达只呈现 recovering。Stream 容器在跑但 Agent 已知未注册时不视为活跃对。
+- 媒体网络固定端点规格：新建网络使用 Supervisor 分配的显式 subnet/ip_range，Gateway 附着在 range 外的固定端点；分配失败（池耗尽/冲突/端点被占/标签不符）显式失败，不退回随机地址。既有不合规网络经 Stream-only 替换重建迁移，Browser 容器、页面、IPC/X11 与 Profile 数据不变。自 t097 起媒体网络为 internal 拓扑（无 NAT 出站）：合规判定同时要求 internal 属性，存量可路由网络按不合规经同一重建路径一次性收敛；该拓扑承载本 Profile 的媒体与 Gateway 信令，Stream 对公网、局域网、宿主其它服务与其它 Profile 的出站由拓扑本身拒绝，UDP mux 仍只发布宿主回环。
+- 稳态收敛只修复漂移层：附着漂移只重新附着；可修复的未注册走有界 Stream-only 替换；Browser 策略漂移立即 fail-closed 并报告 error、不自动 teardown；协议级注册拒绝（版本/凭证/身份/载荷/实例未绑定）不替换并报 failed；Gateway 不可达只呈现 recovering。Stream 容器在跑但 Agent 已知未注册时不视为活跃对。Stream 无策略可漂移：策略状态不可确认的 30 秒预算与暂停隔离只适用于 Browser。
 - API 失联期间只按标签/实例一致性恢复网络附着，不执行生命周期动作；readiness 在 API 不可用或任一状态未知时不报 ready。
 - Supervisor 提供经内部认证的 reconcile_all 与 readiness（宿主机经容器内命令调用，无新增发布端口）；契约经 schema 导出与一致性测试锁定。
 - 分层观测：运行响应与 SSE 暴露 browser/stream/transport 三层状态、版本与 build 标识、最近附着/注册/错误；仅内存保存，API 重启后为 unknown；按实例围栏呈现，异实例观测为 null。信令首次连接异常关闭在 transport recovering 时呈现恢复中，明确失败或超恢复窗口才失败。

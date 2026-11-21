@@ -105,6 +105,7 @@ function runtime(
     observed_state: observed,
     runtime_instance_id: "inst-1",
     config_version: 1,
+    state_revision: 1,
     failure_count: 0,
     restart_blocked: false,
     last_exit_event_id: null,
@@ -116,29 +117,29 @@ function runtime(
   };
 }
 
+// t098: collection rows carry the runtime projection; the stub
+// derives it from the same runtime fixtures.
+function projectionOf(rt: ProfileRuntimeResponse) {
+  return {
+    desired_state: rt.desired_state,
+    observed_state: rt.observed_state,
+    config_version: rt.config_version,
+    state_revision: rt.state_revision,
+    runtime_instance_id: rt.runtime_instance_id,
+    failure_count: rt.failure_count,
+    restart_blocked: rt.restart_blocked,
+    last_started_at: rt.last_started_at ?? null,
+    last_stopped_at: rt.last_stopped_at ?? null,
+    preview_captured_at: null,
+    last_coordinator_error: rt.last_coordinator_error ?? null,
+    updated_at: rt.updated_at,
+  };
+}
+
 function makeStub(
   profiles: ProfileResponse[],
   runtimes: Record<string, ProfileRuntimeResponse>,
 ): ApiClient {
-  const summary = {
-    entries: Object.values(runtimes).map((entry) => ({
-      profile_id: entry.profile_id,
-      desired_state: entry.desired_state,
-      observed_state: entry.observed_state,
-      config_version: entry.config_version,
-      runtime_instance_id: entry.runtime_instance_id,
-      failure_count: entry.failure_count,
-      restart_blocked: entry.restart_blocked,
-      last_started_at: entry.last_started_at ?? null,
-      last_stopped_at: entry.last_stopped_at ?? null,
-      preview_captured_at: null,
-      last_coordinator_error: entry.last_coordinator_error ?? null,
-      updated_at: entry.updated_at,
-    })),
-    running_count: Object.values(runtimes).filter(
-      (entry) => entry.observed_state === "running",
-    ).length,
-  };
   return {
     profiles: {
       list: vi.fn(async () => profiles),
@@ -167,7 +168,14 @@ function makeStub(
         const page = (params.page as number | undefined) ?? 1;
         const pageSize = (params.page_size as number | undefined) ?? 100;
         return {
-          items: items.slice((page - 1) * pageSize, page * pageSize),
+          items: items
+            .slice((page - 1) * pageSize, page * pageSize)
+            .map((item) => ({
+              ...item,
+              runtime: projectionOf(
+                runtimes[item.id] ?? runtime(item.id, "stopped"),
+              ),
+            })),
           total: items.length,
           page,
           page_size: pageSize,
@@ -178,7 +186,7 @@ function makeStub(
       getRuntime: vi.fn(
         async (id: string) => runtimes[id] ?? runtime(id, "stopped"),
       ),
-      getRuntimeSummary: vi.fn(async () => summary),
+      getRuntimeAlerts: vi.fn(async () => ({ entries: [] })),
     },
   } as unknown as ApiClient;
 }

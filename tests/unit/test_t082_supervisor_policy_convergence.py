@@ -296,24 +296,23 @@ async def test_agent_repair_restores_verification_without_isolation(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_stream_agent_unavailable_replaces_stream_only_after_budget(
-    tmp_path,
-):
+async def test_stream_policy_state_never_replaces_or_isolates(tmp_path):
+    # t097: the Stream has no Policy Agent and no policy state, so an
+    # unconfirmable Stream policy is not a convergence input at all —
+    # no replacement, no isolation, no failure budget is consumed.
     adapter = _FakeAdapter(tmp_path)
     adapter.stream_verify_error = DockerSandboxError("agent unavailable")
-    adapter.validator.get_secret_dir(PROFILE).mkdir(parents=True, exist_ok=True)
-    adapter.validator.get_runtime_dir(PROFILE).mkdir(parents=True, exist_ok=True)
     core, session, scan = _make_core(tmp_path, adapter)
     key = (PROFILE, INSTANCE, "stream")
     core._policy_unknown_since[key] = time.monotonic() - 31.0
 
     await core._converge_session(PROFILE, session, scan)
 
-    # Stream isolation is the bounded Stream-only replacement; the
-    # Browser is never paused, fail-closed or rebuilt from here.
-    assert "start_stream" in adapter.calls
+    assert "start_stream" not in adapter.calls
     assert "pause:c_browser" not in adapter.calls
     assert "fail_close" not in adapter.calls
+    observation = core.get_transport_observation(PROFILE)
+    assert observation.transport_state == "ready"
 
 
 @pytest.mark.asyncio
@@ -336,7 +335,9 @@ async def test_policy_agent_event_repairs_only_that_profile(tmp_path):
     core, session, scan = _make_core(tmp_path, adapter)
 
     await core.note_policy_agent_event(PROFILE)
-    assert adapter.calls == ["repair_agent:c_browser", "repair_agent:c_stream"]
+    # t097: only the Browser has an Agent to repair; the Stream
+    # container is never an ensure target.
+    assert adapter.calls == ["repair_agent:c_browser"]
 
     adapter.calls.clear()
     await core.note_policy_agent_event("prof_unknown")
@@ -446,29 +447,6 @@ async def test_reconcile_routes_paused_browser_to_verified_resume(tmp_path):
     assert core._terminal_observations == set()
     observation = core.get_transport_observation(PROFILE)
     assert observation.transport_state == "ready"
-
-
-@pytest.mark.asyncio
-async def test_stream_agent_unavailable_budget_exhausted_fails(tmp_path):
-    # test f002: with the Stream replacement budget already spent,
-    # an unconfirmable Stream policy is a bounded failed state, not
-    # another replacement.
-    adapter = _FakeAdapter(tmp_path)
-    adapter.stream_verify_error = DockerSandboxError("agent unavailable")
-    core, session, scan = _make_core(tmp_path, adapter)
-    key = (PROFILE, INSTANCE, "stream")
-    core._policy_unknown_since[key] = time.monotonic() - 31.0
-    budget_key = f"{PROFILE}:{INSTANCE}"
-    core._stream_replace_attempts[budget_key] = [time.monotonic()] * (
-        core._STREAM_REPLACE_MAX
-    )
-
-    await core._converge_session(PROFILE, session, scan)
-
-    assert "start_stream" not in adapter.calls
-    observation = core.get_transport_observation(PROFILE)
-    assert observation.transport_state == "failed"
-    assert observation.last_error == "stream_policy_agent_unavailable"
 
 
 @pytest.mark.asyncio

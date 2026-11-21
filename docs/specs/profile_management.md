@@ -1,7 +1,7 @@
 ---
 slug: profile_management
 status: active
-tasks: [baseline, t075, t076, t077, t078, t079, t090, t094, t095]
+tasks: [baseline, t075, t076, t077, t078, t079, t090, t094, t095, t098, t099]
 ---
 # 需求规范：Profile 管理与外部标签页
 
@@ -17,11 +17,11 @@ tasks: [baseline, t075, t076, t077, t078, t079, t090, t094, t095]
 - Profile 列表、创建、编辑（名称、屏幕尺寸、备注）与设置均通过 `/api/v1` 完成，前端类型由 OpenAPI 生成。
 - 运行状态由服务端 SSE 推送，断线自动重连；前端不保存控制状态，重连后以服务端状态为准。
 
-## 集合读取与运行摘要（t076）
+## 集合读取与运行投影（t076，t098 修订）
 
 - 列表不再拉全量再客户端拼装：`GET /api/v1/profiles/collection`（搜索 / 分组 / 代理 / 状态 / 平台 / 排序 `default|manual|name|recent|created`，分页 `page_size` 服务端钳制 1..100，总数计全量筛选集）、`GET /api/v1/proxies/collection`、`GET /api/v1/groups/collection`，有界候选 `…/candidates`（`limit` 钳制 1..50）与代理国家→城市范围 `GET /api/v1/proxies/countries`（键为稳定国家代码）。排序默认稳定（`sort_order`、`created_at`、`id`），分页无重复遗漏。
-- 运行状态只读一次批量摘要：`GET /api/v1/profiles/runtime-summary` 返回全部环境 `desired_state` / `observed_state` / `config_version` / 实例 / 失败计数 / 启停时间 / 预览捕获时间 / 协调器错误与运行总数；列表、卡片、工作台入口与关闭的切换器都只读它，不再按环境逐个发 runtime 请求。单环境详情仍按需读 `GET /api/v1/profiles/{id}/runtime`。
-- SSE `runtime_state` 事件带 `config_version` 围栏：旧版本或旧实例的迟到事件丢弃，重复/重放事件无副作用且不触发列表重取；有效事件原地更新 runtime 缓存与摘要缓存。`GET /api/v1/proxies/{id}/used-by` 返回当前配置 ∪ 运行绑定版本的并集明细（每项标 `current` / `bound` / `both`），计数、导航与删除保护用同一口径。
+- 运行状态随集合页交付（t098）：集合行 `ProfileCollectionItem` 自带可空运行投影（`desired_state` / `observed_state` / `config_version` / `state_revision` / 实例 / 失败计数 / 启停时间 / 预览捕获时间 / 协调器错误），服务端按页内 id 一次批量解析，查询数不随环境总量增长；投影为空表示无运行事实，前端显式呈现未知，禁止填补猜测状态。列表、卡片、工作台入口与切换器都读集合行，不再有全库运行摘要；全局协调器错误横幅读紧凑读模型 `GET /api/v1/profiles/runtime-alerts`（仅含当前有错误的环境）。单环境详情仍按需读 `GET /api/v1/profiles/{id}/runtime`。
+- SSE `runtime_state` 事件、集合读取与操作结果共用 `state_revision` 单调围栏（每次运行写入递增）：旧修订的迟到事件丢弃（同版本换实例、配置回滚均被修订吸收），重复/过期事件无副作用且不触发列表重取；有效事件原地更新 runtime 缓存与集合行，状态跨越当前筛选边界时失效对应页由服务端收敛成员与总数，迟到事件不合成新行、不复活已删除环境。`GET /api/v1/proxies/{id}/used-by` 返回当前配置 ∪ 运行绑定版本的并集明细（每项标 `current` / `bound` / `both` 并随引用数据带目标环境 `observed_state`），计数、导航与删除保护用同一口径。
 
 ## 表单布局与长集合选择交互（t077）
 
@@ -97,6 +97,7 @@ tasks: [baseline, t075, t076, t077, t078, t079, t090, t094, t095]
 - Profile 运行配置新增 `fingerprint_platform`（`windows` 默认 / `macos`）与 `font_set_id`（引用同平台不可变字体集），经增量迁移 `0002_fingerprint_platform.py` 加入；两者属运行配置，修改任一都生成新 `ProfileConfigVersion`（AC-003）。
 - t075 起 `font_set_id` 为后端托管绑定：创建/克隆/切平台由服务按资产目录默认规则解析（`GET /api/v1/font-sets` 的 `default_font_set_id[platform]`，只取 verified 的集，其中最近一次验证通过的胜出），创建/更新请求不再接受该字段；字体根已配置（一切真实部署）而平台无可用集时创建/切换在写入前失败，部署中不再产生「无字体集」的 Profile（未配置字体根的进程可暂无绑定，但启动失败封闭）。旧 t053 A16 的显式 null 语义废止。
 - t075 新增运行配置 `include_cjk_fonts`（中文字体暴露开关，创建默认按语言派生）；`color_scheme` 收敛为 `light` / `dark`；`gpu_family` 删除（GPU 身份由引擎按种子+平台派生）。旧形状由迁移 `0013_profile_identity.py` 一次性改写，不可等价映射改写前阻塞（详见 fingerprint_platform spec 2.1 与 ADR 040）。
+- t099 起 `color_scheme` 同时作用于远端浏览器原生外壳：Runner 每次启动前把绑定值派生写入本 Profile 的 Chromium `Preferences`（`browser.theme.color_scheme2` 浅色 1 / 深色 2，并固定 `extensions.theme.system_theme` 为 0 消除 GTK 系统主题覆盖；spike s027 已在固定引擎实测存量 Profile 双向切换与多 Profile 独立配色），与既有网页偏好传参同源同值，写入失败封闭。创建/编辑表单的配色字段带中英文说明：外壳随配色切换、支持适配的网站跟随偏好、配置随新运行生效。
 - `font_bundle`（文泉驿三档）已删除：字段、镜像字体包、代码、文档与测试引用一并清理（AC-009）。
 - runtime 响应与 SSE 下发实际使用的 `font_set_id` 与 `missing_fonts`（t075 起读 Runner 启动前验证结论，不逐请求重扫）；绑定字体集缺失或 manifest / 文件不一致时启动失败封闭 `font_set_unavailable`，未绑定同样失败封闭（AC-006 / AC-007，旧 null 正常启动语义废止）。
 

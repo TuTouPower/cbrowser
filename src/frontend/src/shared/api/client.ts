@@ -29,7 +29,7 @@ import type {
   ProxyProbeJobAccepted,
   ProxyProbeJobRequest,
   ProfileBatchJobRequest,
-  RuntimeSummaryResponse,
+  RuntimeAlertsResponse,
   FontSetListResponse,
   UserSettingsResponse,
   UserSettingsUpdateRequest,
@@ -280,10 +280,12 @@ export class ApiClient {
         `/api/v1/profiles/candidates${buildQuery({ search, limit })}`,
       );
     },
-    /** t076 AC-002: one batched runtime read for all profiles. */
-    getRuntimeSummary: async (): Promise<RuntimeSummaryResponse> => {
-      return this.request<RuntimeSummaryResponse>(
-        "/api/v1/profiles/runtime-summary",
+    /** t098: compact read model — only profiles with a live
+     * coordinator error (drives the global banner). Row runtime state
+     * travels with the collection page itself. */
+    getRuntimeAlerts: async (): Promise<RuntimeAlertsResponse> => {
+      return this.request<RuntimeAlertsResponse>(
+        "/api/v1/profiles/runtime-alerts",
       );
     },
     get: async (profileId: string): Promise<ProfileResponse> => {

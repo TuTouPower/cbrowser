@@ -110,7 +110,7 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 |**Caddy**|边缘反向代理（常驻）|统一暴露 HTTPS 端口，托管前端静态资源；仅反向代理固定路径（`/api/*`、`/stream/*`），不动态扫描 Docker，不处理视频与信令内容。外部 `/api/v1/internal/*` 一律 404；只有 `/stream/*/signal` 先删伪造授权头、经 API 解析会话，再删除 Cookie 后代理到 Gateway|
 |**Control API**|`cbrowser-api` 容器（常驻）|HTTP 接口、用户鉴权、Profile CRUD、Artifact 文件服务；viewer 握手时经内部边缘解析端点复用 `AuthService.authorize_viewer` 作唯一会话/Origin/Profile 判定，并签发短期 viewer grant。**系统唯一 SQLite 写入者**（开启 WAL 模式，`busy_timeout=5000`）。**严格禁止挂载 Docker Socket**，禁止直接访问 Browser Runtime 私有网络|
 |**Runtime Supervisor**|`cbrowser-supervisor` 容器（常驻）|**宿主机唯一持有 Docker Socket 的服务**。仅响应内部受限认证 RPC，负责 Profile 双容器生命周期、网络与 UDP 端口分配；通过受控 UDS 代理 CDP 与事件回传。**严格禁止读写或挂载 SQLite**|
-|**Policy Agent**|每目标 netns 一个容器（常驻，t082 / ADR 039）|与 Browser/Stream 目标同 netns 的受限策略执行与观测进程：仅 NET_ADMIN、只读根、无 Docker Socket 与用户数据挂载，只经版本化 UDS 协议接受 Supervisor 的 health/resolve/install/inspect/fail_close 指令，身份在创建时绑定且运行期不可变|
+|**Policy Agent**|每 Browser netns 一个容器（常驻，t082 / ADR 039；t097 收敛为 Browser-only）|与 Browser 目标同 netns 的受限策略执行与观测进程：仅 NET_ADMIN、只读根、无 Docker Socket 与用户数据挂载，只经版本化 UDS 协议接受 Supervisor 的 health/resolve/install/inspect/fail_close 指令，身份在创建时绑定且运行期不可变；容器名 `<prefix>-<NNNN>-policy-agent`，与沙箱同属 `<prefix>-profiles` 分组。Stream 自 t097 起无 Policy Agent，其隔离由 per-Profile internal 媒体网络拓扑承担|
 |**状态协调**|API ↔ Supervisor（t083 / ADR 040）|最小批量状态协议：API 以服务鉴权提供仅含协调字段的快照（键集分批）与推送通知（epoch + state_revision 围栏），Supervisor 以状态缓存为唯一意愿视图（单飞快照、30 秒兜底、40 秒权威窗口）；runtime GET/列表/SSE 只读已维护观测，健康观察归各服务控制组件，Compose 无 Docker healthcheck|
 |**Stream Gateway**|`cbrowser-stream-gateway` 容器（常驻）|独立信令网关。维护 Stream Agent 动态注册表；viewer 握手只在本地验证 API 签发的短期 grant、Profile 绑定与 Origin，不接收或解析管理会话 Cookie；为每个外部 ViewerConnection 建立隔离信令隧道双向转发 SDP 与 ICE；进程异常重启不影响底层浏览器进程运行|
 |**Browser Runtime**|`browser-runtime-{id}` 容器（动态）|特定 Profile 的核心运行沙箱。以非 root 运行真实 CloakBrowser、Xvfb、Openbox、PulseAudio 服务（48000 Hz）与 Browser Agent。作为 IPC 供体显式开启 `HostConfig.IpcMode=shareable` 与 1 GiB `/dev/shm`；代理凭据文件以只读挂载进本容器，CloakBrowser 通过 SDK `proxy=`、WebRTC/QUIC 加固参数及有代理 `OUTPUT -j DROP` 网络策略直连上游代理（ADR 038）|
@@ -194,7 +194,7 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 
 - 列表读是服务端集合投影，不是全量拉取后客户端拼装：`GET /api/v1/profiles|proxies|groups/collection` 在持久层完成搜索 / 筛选 / 稳定排序 / 总数 / 有界分页（`page_size` 钳制 1..100）；有界候选 `…/candidates`（`limit` 钳制 1..50）与代理国家→城市范围 `GET /api/v1/proxies/countries`（键为稳定国家代码）供后续交互使用。
 - 代理引用聚合一次取 3 条 SELECT（当前引用、全部运行行、绑定配置版本 `IN` 查询），与代理数 × 运行绑定数无关；`list_proxies` 在 20/100/1000 规模下 SELECT 数恒定。
-- 运行状态只读一次批量摘要 `GET /api/v1/profiles/runtime-summary`（全部环境状态 + 运行总数）；SSE `runtime_state` 事件带 `config_version` 围栏，旧版本/旧实例迟到事件丢弃，重复事件无副作用且不触发列表重取，有效事件原地更新运行缓存与摘要缓存——摘要更新不依赖单环境运行缓存，围栏按两份缓存中现有的那份判定。环境集合页的行自带分组名/颜色与代理名（服务端按页批量查名），筛选选项读有界候选；任何变更路径失效列表键时同步失效集合键前缀。前端缓存职责：列表只读集合页与摘要，详情按需单读，批量操作目标按稳定 ID 与明确目标快照确定，当前页全选与全部匹配项语义分开。
+- 运行状态随有界集合页按行交付（t098）：集合行自带可空运行投影，服务端按页内 id 一次批量解析、查询数不随总量增长，全库运行摘要端点已删除；SSE `runtime_state` 事件、集合读取与操作结果共用 `state_revision` 单调围栏，旧修订迟到事件丢弃，重复事件无副作用且不触发列表重取，有效事件原地更新运行缓存与集合行——行更新不依赖单环境运行缓存，围栏按每份缓存自身修订判定；状态跨越筛选边界时失效对应页由服务端收敛。全局协调器错误读紧凑读模型 `GET /api/v1/profiles/runtime-alerts`。环境集合页的行自带分组名/颜色与代理名（服务端按页批量查名），筛选选项读有界候选；任何变更路径失效列表键时同步失效集合键前缀。前端缓存职责：列表只读集合页，详情按需单读，批量操作目标按稳定 ID 与明确目标快照确定，当前页全选与全部匹配项语义分开。
 
 ### 5.9 停止后删除协调与故障恢复（t078）
 

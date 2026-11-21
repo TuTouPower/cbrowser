@@ -19,7 +19,6 @@ import pytest
 from cbrowser.supervisor.docker_adapter import (
     DockerAdapter,
     DockerSandboxError,
-    StreamContainerResidueError,
 )
 from cbrowser.supervisor.path_validator import PathValidator
 from cbrowser.supervisor.selkies_tokens import SelkiesTokens
@@ -142,68 +141,6 @@ async def test_stream_start_failure_keeps_docker_detail_redacted(tmp_path: Path)
     assert "DockerException" not in message
 
 
-@pytest.mark.asyncio
-async def test_stream_residue_error_keeps_docker_detail(tmp_path: Path) -> None:
-    client = MagicMock()
-    adapter = _adapter(tmp_path, client)
-    adapter.remember_profile_number("p1", 1)
-    dirs = adapter.prepare_profile_directories("p1")
-    (dirs["x11"] / "X99").touch()
-    (dirs["runtime"] / "Xauthority").touch()
-    secret_dir = adapter.validator.get_secret_dir("p1")
-    secret_dir.mkdir(parents=True, exist_ok=True)
-    agent_secret = secret_dir / "agent_secret.txt"
-    agent_secret.write_text("agent_secret_test", encoding="utf-8")
-    agent_secret.chmod(0o600)
-    tokens_path = secret_dir / "selkies_tokens.json"
-    SelkiesTokens.generate().write_credentials_file(tokens_path)
-    client.api.inspect_container.return_value = {
-        "Config": {
-            "Hostname": "b-host",
-            "Labels": {"com.cbrowser.config-version": "1"},
-        }
-    }
-    adapter.cleanup_container_by_name = MagicMock()
-    # t082: stub the Policy Agent lifecycle (in-process rig).
-    from tests.unit.policy_agent_test_support import PolicyAgentTestRig
-
-    _rig = PolicyAgentTestRig()
-    _rig.install_on(adapter)
-    _rig.stub_ensure(adapter)
-    adapter._prepare_policy_gate = MagicMock(return_value=tmp_path / "data" / "control" / "gates" / "p1" / "inst" / "gate")
-    container = MagicMock()
-    container.id = "stream-container-id"
-    container.name = adapter.get_stream_container_name("p1")
-    container.remove = MagicMock(side_effect=DockerException("remove failed"))
-    container.labels = {
-        "com.cbrowser.prefix": adapter.resource_prefix,
-        "com.cbrowser.managed-by": "supervisor",
-        "com.cbrowser.role": "stream",
-        "com.cbrowser.profile-id": "p1",
-        "com.cbrowser.instance-id": "inst_1",
-    }
-    client.containers.run.return_value = container
-    adapter._resolved_endpoint = MagicMock(
-        side_effect=DockerException(
-            "500 Server Error: proxy http://proxy-user:s3cret@proxy:8080 refused"
-        )
-    )
-
-    with pytest.raises(StreamContainerResidueError) as caught:
-        await adapter.start_stream_container(
-            profile_id="p1",
-            runtime_instance_id="inst_1",
-            browser_container_name="cbrowser-p1-browser",
-            udp_mux_port=30006,
-            agent_secret_path=agent_secret,
-            selkies_tokens_path=tokens_path,
-        )
-    assert caught.value.cause_type == "DockerException"
-    assert "proxy-user" not in str(caught.value)
-    assert "s3cret" not in str(caught.value)
-    assert "proxy:8080" in str(caught.value)
-
-
 def test_cache_initializer_failure_keeps_docker_detail(tmp_path: Path) -> None:
     client = MagicMock()
     adapter = _adapter(tmp_path, client)
@@ -268,6 +205,9 @@ def test_network_list_failure_keeps_docker_detail(tmp_path: Path) -> None:
 def test_policy_install_failure_keeps_docker_detail_redacted(tmp_path: Path) -> None:
     client = MagicMock()
     adapter = _adapter(tmp_path, client)
+    # Production install paths always know the Profile's display
+    # number (t097: the Agent's name and labels carry it).
+    adapter.remember_profile_number("p1", 1)
     gate = adapter._prepare_policy_gate("p1", "inst_1", "browser")
     client.containers.create.side_effect = DockerException(
         "iptables failed: proxy http://proxy-user:s3cret@proxy:8080"
