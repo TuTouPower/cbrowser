@@ -20,6 +20,7 @@ def _runtime(instance: str | None = "inst_1"):
         observed_state="running",
         runtime_instance_id=instance,
         config_version=1,
+        state_revision=0,
         failure_count=0,
         restart_blocked=False,
         last_exit_event_id=None,

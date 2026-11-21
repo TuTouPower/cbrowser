@@ -3,9 +3,8 @@ import { useNavigate } from "react-router";
 import { useI18n } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";
 import type {
-  ProfileResponse,
+  ProfileCollectionItem,
   ProfileRuntimeResponse,
-  RuntimeSummaryEntry,
 } from "../../shared/api/types";
 import { Banner, Button, useToast } from "../../shared/ui";
 import { BatchActionBar } from "./BatchActionBar";
@@ -43,32 +42,35 @@ import {
   useProxyCandidatesQuery,
   useProxyQuery,
   useRetryDeletionMutation,
-  useRuntimeSummaryQuery,
   useSetDesiredStateMutation,
   useStopProfileMutation,
 } from "./useProfilesQuery";
 
-/** t076 AC-002: build the row runtime view from one batched summary
- * entry — the list never issues a per-profile runtime request. */
-function summaryToRuntime(
-  entry: RuntimeSummaryEntry,
-  profile: ProfileResponse,
-): ProfileRuntimeResponse {
+/** t098: build the row runtime view from the collection row's own
+ * runtime projection — the list never issues a per-profile runtime
+ * request, and a row without a projection stays runtime-less (the
+ * explicit unknown), never a synthesized state. */
+function projectionToRuntime(
+  item: ProfileCollectionItem,
+): ProfileRuntimeResponse | undefined {
+  const projection = item.runtime;
+  if (!projection) return undefined;
   return {
-    profile_id: entry.profile_id,
-    display_number: profile.display_number,
-    desired_state: entry.desired_state,
-    observed_state: entry.observed_state,
-    runtime_instance_id: entry.runtime_instance_id ?? null,
-    config_version: entry.config_version,
-    failure_count: entry.failure_count,
-    restart_blocked: entry.restart_blocked,
+    profile_id: item.id,
+    display_number: item.display_number,
+    desired_state: projection.desired_state,
+    observed_state: projection.observed_state,
+    runtime_instance_id: projection.runtime_instance_id ?? null,
+    config_version: projection.config_version,
+    state_revision: projection.state_revision,
+    failure_count: projection.failure_count,
+    restart_blocked: projection.restart_blocked,
     last_exit_event_id: null,
-    last_started_at: entry.last_started_at,
-    last_stopped_at: entry.last_stopped_at,
-    preview_captured_at: entry.preview_captured_at ?? null,
-    last_coordinator_error: entry.last_coordinator_error,
-    updated_at: entry.updated_at,
+    last_started_at: projection.last_started_at,
+    last_stopped_at: projection.last_stopped_at,
+    preview_captured_at: projection.preview_captured_at ?? null,
+    last_coordinator_error: projection.last_coordinator_error,
+    updated_at: projection.updated_at,
   };
 }
 
@@ -135,7 +137,6 @@ export function EnvironmentListPage() {
       : null;
   const selectedGroupQuery = useGroupQuery(selectedGroupId, client);
   const selectedProxyQuery = useProxyQuery(selectedProxyId, client);
-  const summaryQuery = useRuntimeSummaryQuery(client);
   const profiles = profilesQuery.data?.items ?? [];
   const total = profilesQuery.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / 50));
@@ -157,19 +158,9 @@ export function EnvironmentListPage() {
       ? [selectedProxyQuery.data]
       : []),
   ];
-  const summaryById = new Map(
-    (summaryQuery.data?.entries ?? []).map((entry) => [
-      entry.profile_id,
-      entry,
-    ]),
-  );
   const runtimeById = new Map<string, ProfileRuntimeResponse | undefined>();
   profiles.forEach((item) => {
-    const entry = summaryById.get(item.id);
-    runtimeById.set(
-      item.id,
-      entry ? summaryToRuntime(entry, item) : undefined,
-    );
+    runtimeById.set(item.id, projectionToRuntime(item));
   });
 
   const previewCapturedAtById = new Map<string, string | null>();
@@ -333,9 +324,6 @@ export function EnvironmentListPage() {
   const profilesError = profilesQuery.isError
     ? (profilesQuery.error?.message ?? t("runtimeStateUnknown"))
     : null;
-  const runtimeError = summaryQuery.isError
-    ? (summaryQuery.error?.message ?? t("runtimeStateUnknown"))
-    : null;
   // P2: groups/proxies 聚合进列表错误态，避免静默空列表。
   const groupsError = groupsQuery.isError
     ? (groupsQuery.error?.message ?? t("runtimeStateUnknown"))
@@ -343,10 +331,9 @@ export function EnvironmentListPage() {
   const proxiesError = proxiesQuery.isError
     ? (proxiesQuery.error?.message ?? t("runtimeStateUnknown"))
     : null;
-  const listError = profilesError ?? runtimeError ?? groupsError ?? proxiesError;
+  const listError = profilesError ?? groupsError ?? proxiesError;
   const reloadList = () => {
     if (profilesQuery.isError) void profilesQuery.refetch();
-    if (summaryQuery.isError) void summaryQuery.refetch();
     if (groupsQuery.isError) void groupsQuery.refetch();
     if (proxiesQuery.isError) void proxiesQuery.refetch();
   };

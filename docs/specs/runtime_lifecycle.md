@@ -1,7 +1,7 @@
 ---
 slug: runtime_lifecycle
 status: active
-tasks: [baseline, t075, t076, t078, t082, t083, t091]
+tasks: [baseline, t075, t076, t078, t082, t083, t091, t098]
 ---
 # 需求规范：Runtime 生命周期协调
 
@@ -20,10 +20,10 @@ tasks: [baseline, t075, t076, t078, t082, t083, t091]
 - Supervisor 不可达时运行意愿保留，错误经 API 响应与 SSE 显式报告；恢复后按退避重试收敛并清除错误。API 重启时对意愿与观测不一致的 Profile 重新收敛。
 - 未配置 Supervisor 时 API 默认显式禁用协调并报告；`CBROWSER_REQUIRE_SUPERVISOR=1` 时缺失配置拒绝启动，生产部署必须启用。
 
-## 集合运行摘要与 SSE 围栏（t076）
+## 集合运行投影与 SSE 围栏（t076，t098 修订）
 
-- `GET /api/v1/profiles/runtime-summary` 一次返回全部环境的运行摘要（`desired_state` / `observed_state` / `config_version` / 实例 / 失败计数 / 启停与预览捕获时间 / 协调器错误）与运行总数；列表、卡片、工作台入口与关闭的切换器只读它，不再按环境逐个请求 runtime。
-- SSE `runtime_state` 事件带 `config_version`：旧版本或旧实例的迟到事件丢弃，重复/重放事件无副作用且不触发列表重取；有效事件原地更新运行缓存与摘要缓存，重连后以服务端快照为准。
+- 运行状态随有界集合页交付（t098）：每行自带运行投影（含 `state_revision`），列表、卡片、工作台入口与切换器只读集合行，不再有全库运行摘要，也不再按环境逐个请求 runtime；全局协调器错误读紧凑读模型 `GET /api/v1/profiles/runtime-alerts`。
+- SSE `runtime_state` 事件带 `state_revision` 单调围栏（与集合读取、操作结果共用）：旧修订的迟到事件丢弃，重复/重放事件无副作用且不触发列表重取；有效事件原地更新运行缓存与集合行，重连后以服务端快照为准。
 
 ## 停止后删除协调（t078）
 

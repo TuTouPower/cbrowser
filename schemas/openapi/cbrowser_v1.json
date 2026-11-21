@@ -350,7 +350,7 @@
           "profiles"
         ],
         "summary": "List Profiles Collection",
-        "description": "t076 AC-001: bounded server-side profile page (search/filter/sort\nrun against the full set; page_size is clamped to 1..100).",
+        "description": "t076 AC-001: bounded server-side profile page (search/filter/sort\nrun against the full set; page_size is clamped to 1..100).\n\nt098: every row carries its runtime projection, resolved for the\npage's ids only. The coordinator error is filled in here, bounded\nby the page \u2014 it lives in coordinator memory, not the DB row.",
         "operationId": "list_profiles_collection_api_v1_profiles_collection_get",
         "parameters": [
           {
@@ -477,7 +477,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CollectionPage_ProfileResponse_"
+                  "$ref": "#/components/schemas/CollectionPage_ProfileCollectionItem_"
                 }
               }
             }
@@ -626,21 +626,21 @@
         ]
       }
     },
-    "/api/v1/profiles/runtime-summary": {
+    "/api/v1/profiles/runtime-alerts": {
       "get": {
         "tags": [
           "profiles"
         ],
-        "summary": "Get Runtime Summary",
-        "description": "t076 AC-002: one batched read of every profile's runtime state.\n\nList pages consume this single payload instead of issuing one\nruntime HTTP request per profile.",
-        "operationId": "get_runtime_summary_api_v1_profiles_runtime_summary_get",
+        "summary": "Get Runtime Alerts",
+        "description": "t098: compact read model for the global coordinator-error\nbanner \u2014 only profiles with a live coordinator error are listed.\nRow runtime state itself travels with the bounded collection\n(t098); the former all-profiles runtime summary is gone.",
+        "operationId": "get_runtime_alerts_api_v1_profiles_runtime_alerts_get",
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RuntimeSummaryResponse"
+                  "$ref": "#/components/schemas/RuntimeAlertsResponse"
                 }
               }
             }
@@ -7079,11 +7079,11 @@
         "type": "object",
         "title": "CollectionPage[GroupResponse]"
       },
-      "CollectionPage_ProfileResponse_": {
+      "CollectionPage_ProfileCollectionItem_": {
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/ProfileResponse"
+              "$ref": "#/components/schemas/ProfileCollectionItem"
             },
             "type": "array",
             "title": "Items"
@@ -7106,7 +7106,7 @@
         },
         "additionalProperties": false,
         "type": "object",
-        "title": "CollectionPage[ProfileResponse]"
+        "title": "CollectionPage[ProfileCollectionItem]"
       },
       "CollectionPage_ProxyResponse_": {
         "properties": {
@@ -7263,6 +7263,26 @@
         ],
         "title": "ControlHandoffRequest",
         "description": "Handoff request (t031_code_f005: read the field notes).\n\nHandoff is fail-open toward the user: the identity fields are\naccepted but IGNORED (any automation-token holder may move a\nprofile back to the safe state; the server does not check that the\ncaller is the controlling agent). Only ``reason``/``detail`` act."
+      },
+      "CoordinatorErrorEntry": {
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "title": "Profile Id"
+          },
+          "last_coordinator_error": {
+            "type": "string",
+            "title": "Last Coordinator Error"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "profile_id",
+          "last_coordinator_error"
+        ],
+        "title": "CoordinatorErrorEntry",
+        "description": "One profile with a live coordinator error (t098 compact read\nmodel for the global banner: only errored profiles are listed)."
       },
       "ErrorResponse": {
         "properties": {
@@ -7751,6 +7771,277 @@
         ],
         "title": "ProfileBatchJobRequest",
         "description": "Frozen target set + action for a server-driven environment batch (t094 AC-007)."
+      },
+      "ProfileCollectionItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "display_number": {
+            "type": "integer",
+            "title": "Display Number"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "fingerprint_seed": {
+            "type": "integer",
+            "title": "Fingerprint Seed"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
+          },
+          "proxy_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proxy Id"
+          },
+          "group_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Name"
+          },
+          "group_color": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "slate",
+                  "blue",
+                  "teal",
+                  "green",
+                  "amber",
+                  "orange",
+                  "red",
+                  "violet"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Color"
+          },
+          "proxy_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proxy Name"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone"
+          },
+          "locale": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "zh-CN",
+                  "en-US"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
+          "screen_width": {
+            "type": "integer",
+            "title": "Screen Width",
+            "default": 1920
+          },
+          "screen_height": {
+            "type": "integer",
+            "title": "Screen Height",
+            "default": 1080
+          },
+          "humanize": {
+            "type": "boolean",
+            "title": "Humanize",
+            "default": true
+          },
+          "human_preset": {
+            "type": "string",
+            "title": "Human Preset",
+            "default": "default"
+          },
+          "geoip": {
+            "type": "boolean",
+            "title": "Geoip",
+            "default": true
+          },
+          "clipboard_sync": {
+            "type": "boolean",
+            "title": "Clipboard Sync",
+            "default": true
+          },
+          "auto_launch": {
+            "type": "boolean",
+            "title": "Auto Launch",
+            "default": false
+          },
+          "color_scheme": {
+            "type": "string",
+            "title": "Color Scheme",
+            "default": "light"
+          },
+          "fingerprint_platform": {
+            "type": "string",
+            "title": "Fingerprint Platform"
+          },
+          "font_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Font Set Id"
+          },
+          "include_cjk_fonts": {
+            "type": "boolean",
+            "title": "Include Cjk Fonts",
+            "default": true
+          },
+          "launch_args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Launch Args"
+          },
+          "extension_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Extension Paths"
+          },
+          "allow_3p_cookies": {
+            "type": "boolean",
+            "title": "Allow 3P Cookies",
+            "default": true
+          },
+          "set_google_default": {
+            "type": "boolean",
+            "title": "Set Google Default",
+            "default": true
+          },
+          "capture_preview": {
+            "type": "boolean",
+            "title": "Capture Preview",
+            "default": true
+          },
+          "restore_session": {
+            "type": "boolean",
+            "title": "Restore Session",
+            "default": true
+          },
+          "transparent_proxy": {
+            "type": "boolean",
+            "title": "Transparent Proxy",
+            "default": false
+          },
+          "portable_cookies": {
+            "type": "boolean",
+            "title": "Portable Cookies",
+            "default": true
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "user_data_dir": {
+            "type": "string",
+            "title": "User Data Dir"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order",
+            "default": 0
+          },
+          "current_config_version": {
+            "type": "integer",
+            "title": "Current Config Version",
+            "default": 1
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          },
+          "runtime": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProfileRuntimeProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "display_number",
+          "name",
+          "fingerprint_seed",
+          "user_data_dir",
+          "created_at",
+          "updated_at",
+          "runtime"
+        ],
+        "title": "ProfileCollectionItem",
+        "description": "One row of the bounded profile collection (t098): the config\nrow plus its runtime projection. ``runtime`` is required but\nnullable \u2014 ``None`` means the server holds no runtime fact for the\nrow, and consumers must present an explicit unknown instead of\nfilling in a guessed state."
       },
       "ProfileControlStateData": {
         "properties": {
@@ -8462,6 +8753,117 @@
         ],
         "title": "ProfileResponse"
       },
+      "ProfileRuntimeProjection": {
+        "properties": {
+          "desired_state": {
+            "type": "string",
+            "enum": [
+              "stopped",
+              "running"
+            ],
+            "title": "Desired State"
+          },
+          "observed_state": {
+            "type": "string",
+            "enum": [
+              "stopped",
+              "starting",
+              "running",
+              "stopping",
+              "error"
+            ],
+            "title": "Observed State"
+          },
+          "config_version": {
+            "type": "integer",
+            "title": "Config Version",
+            "default": 1
+          },
+          "state_revision": {
+            "type": "integer",
+            "title": "State Revision",
+            "default": 0
+          },
+          "runtime_instance_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime Instance Id"
+          },
+          "failure_count": {
+            "type": "integer",
+            "title": "Failure Count",
+            "default": 0
+          },
+          "restart_blocked": {
+            "type": "boolean",
+            "title": "Restart Blocked",
+            "default": false
+          },
+          "last_started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Started At"
+          },
+          "last_stopped_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Stopped At"
+          },
+          "preview_captured_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Captured At"
+          },
+          "last_coordinator_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Coordinator Error"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "desired_state",
+          "observed_state"
+        ],
+        "title": "ProfileRuntimeProjection",
+        "description": "One collection row's runtime state (t098): the bounded page\ndelivers the runtime projection alongside the config row, so list,\ncard, session-entry and switcher consumers read state from the\ncollection itself instead of a separate all-profiles summary.\n``state_revision`` is the monotonic fence shared with operation\nresults and SSE events."
+      },
       "ProfileRuntimeResponse": {
         "properties": {
           "profile_id": {
@@ -8505,6 +8907,11 @@
           "config_version": {
             "type": "integer",
             "title": "Config Version"
+          },
+          "state_revision": {
+            "type": "integer",
+            "title": "State Revision",
+            "default": 0
           },
           "failure_count": {
             "type": "integer",
@@ -8721,6 +9128,11 @@
             "type": "integer",
             "title": "Config Version",
             "default": 1
+          },
+          "state_revision": {
+            "type": "integer",
+            "title": "State Revision",
+            "default": 0
           },
           "failure_count": {
             "type": "integer",
@@ -9823,6 +10235,24 @@
               "both"
             ],
             "title": "Kind"
+          },
+          "observed_state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "stopped",
+                  "starting",
+                  "running",
+                  "stopping",
+                  "error"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed State"
           }
         },
         "additionalProperties": false,
@@ -9830,7 +10260,8 @@
         "required": [
           "profile_id",
           "name",
-          "kind"
+          "kind",
+          "observed_state"
         ],
         "title": "ProxyUsedByEntry",
         "description": "One profile referencing a proxy, with the reference kind (t076\nAC-004): ``current`` (live config), ``bound`` (running bound\nversion only), ``both`` (same profile references it both ways)."
@@ -9857,6 +10288,23 @@
         ],
         "title": "ProxyUsedByResponse"
       },
+      "RuntimeAlertsResponse": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/CoordinatorErrorEntry"
+            },
+            "type": "array",
+            "title": "Entries"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "entries"
+        ],
+        "title": "RuntimeAlertsResponse"
+      },
       "RuntimeDesiredStateRequest": {
         "properties": {
           "desired_state": {
@@ -9874,139 +10322,6 @@
           "desired_state"
         ],
         "title": "RuntimeDesiredStateRequest"
-      },
-      "RuntimeSummaryEntry": {
-        "properties": {
-          "profile_id": {
-            "type": "string",
-            "title": "Profile Id"
-          },
-          "desired_state": {
-            "type": "string",
-            "enum": [
-              "stopped",
-              "running"
-            ],
-            "title": "Desired State"
-          },
-          "observed_state": {
-            "type": "string",
-            "enum": [
-              "stopped",
-              "starting",
-              "running",
-              "stopping",
-              "error"
-            ],
-            "title": "Observed State"
-          },
-          "config_version": {
-            "type": "integer",
-            "title": "Config Version",
-            "default": 1
-          },
-          "runtime_instance_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Runtime Instance Id"
-          },
-          "failure_count": {
-            "type": "integer",
-            "title": "Failure Count",
-            "default": 0
-          },
-          "restart_blocked": {
-            "type": "boolean",
-            "title": "Restart Blocked",
-            "default": false
-          },
-          "last_started_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Started At"
-          },
-          "last_stopped_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Stopped At"
-          },
-          "preview_captured_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Preview Captured At"
-          },
-          "last_coordinator_error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Coordinator Error"
-          },
-          "updated_at": {
-            "type": "string",
-            "title": "Updated At",
-            "default": ""
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "profile_id",
-          "desired_state",
-          "observed_state"
-        ],
-        "title": "RuntimeSummaryEntry",
-        "description": "One profile's runtime state for the batched summary (t076 AC-002):\nlist pages read this single payload instead of one HTTP request\nper profile.  It carries every field the list rows render, so no\nper-row read is needed."
-      },
-      "RuntimeSummaryResponse": {
-        "properties": {
-          "entries": {
-            "items": {
-              "$ref": "#/components/schemas/RuntimeSummaryEntry"
-            },
-            "type": "array",
-            "title": "Entries"
-          },
-          "running_count": {
-            "type": "integer",
-            "title": "Running Count",
-            "default": 0
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "entries"
-        ],
-        "title": "RuntimeSummaryResponse"
       },
       "SearchDefaultsStatusData": {
         "properties": {

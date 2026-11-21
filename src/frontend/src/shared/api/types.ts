@@ -36,11 +36,14 @@ export type ProxyProbeJobMember = Schemas["ProxyProbeJobMember"];
 export type ProxyProbeJobRequest = Schemas["ProxyProbeJobRequest"];
 export type ProfileBatchJobRequest = Schemas["ProfileBatchJobRequest"];
 export type CandidateEntry = Schemas["CandidateEntry"];
-export type ProfileCollectionPage = Schemas["CollectionPage_ProfileResponse_"];
+export type ProfileCollectionItem = Schemas["ProfileCollectionItem"];
+export type ProfileRuntimeProjection = Schemas["ProfileRuntimeProjection"];
+export type ProfileCollectionPage =
+  Schemas["CollectionPage_ProfileCollectionItem_"];
 export type ProxyCollectionPage = Schemas["CollectionPage_ProxyResponse_"];
 export type GroupCollectionPage = Schemas["CollectionPage_GroupResponse_"];
-export type RuntimeSummaryEntry = Schemas["RuntimeSummaryEntry"];
-export type RuntimeSummaryResponse = Schemas["RuntimeSummaryResponse"];
+export type CoordinatorErrorEntry = Schemas["CoordinatorErrorEntry"];
+export type RuntimeAlertsResponse = Schemas["RuntimeAlertsResponse"];
 export type FontSetInfo = Schemas["FontSetInfo"];
 export type FontSetIntegrity = Schemas["FontSetIntegrity"];
 export type FontSetListResponse = Schemas["FontSetListResponse"];

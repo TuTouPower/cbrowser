@@ -281,7 +281,7 @@ function makeStub(proxies: ProxyResponse[] = fixture()) {
     profiles: {
       list: mockFn(async () => []),
       getRuntime: mockFn(async () => ({ observed_state: "stopped" })),
-      getRuntimeSummary: mockFn(async () => ({ entries: [], running_count: 0 })),
+      getRuntimeAlerts: mockFn(async () => ({ entries: [] })),
     },
     groups: { list: mockFn(async () => []) },
     fontSets: { list: mockFn(async () => ({ items: [], default_font_set_id: { windows: null, macos: null } })) },
@@ -661,15 +661,32 @@ describe("ProxyListPage AC-005 使用环境 0/1/2+ 交互", () => {
       if (id === "px4") {
         return {
           proxy_id: id,
-          entries: [{ profile_id: "p1", name: "Alpha", kind: "bound" }],
+          entries: [
+            {
+              profile_id: "p1",
+              name: "Alpha",
+              kind: "bound",
+              observed_state: "running",
+            },
+          ],
         };
       }
       if (id === "px1") {
         return {
           proxy_id: id,
           entries: [
-            { profile_id: "p2", name: "Beta", kind: "current" },
-            { profile_id: "p3", name: "Gamma", kind: "bound" },
+            {
+              profile_id: "p2",
+              name: "Beta",
+              kind: "current",
+              observed_state: "running",
+            },
+            {
+              profile_id: "p3",
+              name: "Gamma",
+              kind: "bound",
+              observed_state: "stopped",
+            },
           ],
         };
       }
@@ -723,6 +740,15 @@ describe("ProxyListPage AC-005 使用环境 0/1/2+ 交互", () => {
     expect(screen.getByTestId("proxy-used-by-item-p3")).toHaveTextContent(
       "Gamma",
     );
+    // t098 test review f002: the status dot comes from the entry's own
+    // observed_state (no separate runtime read) — running is success,
+    // anything else is muted.
+    expect(
+      screen.getByTestId("proxy-used-by-item-p2").firstElementChild,
+    ).toHaveClass("bg-success");
+    expect(
+      screen.getByTestId("proxy-used-by-item-p3").firstElementChild,
+    ).toHaveClass("bg-on-surface-muted");
 
     fireEvent.click(screen.getByTestId("proxy-used-by-item-p2"));
     expect(await screen.findByTestId("profile-detail-stub")).toBeInTheDocument();

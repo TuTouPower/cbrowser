@@ -4,9 +4,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
 import {
   useProfilesQuery,
+  useProfilesCollectionQuery,
   useProfileRuntimeQuery,
-  useRuntimeSummaryQuery,
   useCreateProfileMutation,
+  useSetDesiredStateMutation,
   useProfileEventsSync,
   profileKeys,
   groupKeys,
@@ -16,8 +17,10 @@ import {
 import { ApiClient } from "../../shared/api/client";
 import {
   DEFAULT_PROFILE_CREATE_VALUES,
+  type ProfileCollectionItem,
+  type ProfileCollectionPage,
+  type ProfileRuntimeProjection,
   type ProfileRuntimeResponse,
-  type RuntimeSummaryResponse,
 } from "../../shared/api/types";
 import {
   ProfileEventsClient,
@@ -32,7 +35,7 @@ describe("useProfilesQuery & SSE Sync", () => {
   let sseCallback: ((event: ProfileRuntimeEvent) => void) | null = null;
   let listCallCount = 0;
   let runtimeCallCount = 0;
-  let summaryCallCount = 0;
+  let collectionCallCount = 0;
 
   beforeEach(() => {
     queryClient = new QueryClient({
@@ -46,7 +49,7 @@ describe("useProfilesQuery & SSE Sync", () => {
     mockApiClient = new ApiClient();
     listCallCount = 0;
     runtimeCallCount = 0;
-    summaryCallCount = 0;
+    collectionCallCount = 0;
     mockApiClient.profiles.list = async () => {
       listCallCount += 1;
       return [
@@ -80,9 +83,12 @@ describe("useProfilesQuery & SSE Sync", () => {
       },
     ];
     };
-    mockApiClient.profiles.getRuntimeSummary = async () => {
-      summaryCallCount += 1;
-      return { entries: [], running_count: 0 };
+    mockApiClient.profiles.getRuntimeAlerts = async () => {
+      return { entries: [] };
+    };
+    mockApiClient.profiles.listCollection = async () => {
+      collectionCallCount += 1;
+      return { items: [], total: 0, page: 1, page_size: 50 };
     };
     mockApiClient.profiles.getRuntime = async (id: string) => {
       runtimeCallCount += 1;
@@ -93,6 +99,7 @@ describe("useProfilesQuery & SSE Sync", () => {
         observed_state: "stopped",
         runtime_instance_id: null,
         config_version: 1,
+        state_revision: 1,
         failure_count: 0,
         restart_blocked: false,
         last_exit_event_id: null,
@@ -134,6 +141,7 @@ describe("useProfilesQuery & SSE Sync", () => {
       observed_state: "starting",
       runtime_instance_id: null,
       config_version: 1,
+      state_revision: 2,
       failure_count: 0,
       restart_blocked: false,
       last_exit_event_id: null,
@@ -155,6 +163,57 @@ describe("useProfilesQuery & SSE Sync", () => {
     return ({ children }: { children: ReactNode }) =>
       createElement(QueryClientProvider, { client: queryClient }, children);
   };
+
+  // t098: a collection row's runtime projection fixture.
+  const makeProjection = (
+    overrides: Partial<ProfileRuntimeProjection> = {},
+  ): ProfileRuntimeProjection => ({
+    desired_state: "stopped",
+    observed_state: "stopped",
+    config_version: 1,
+    state_revision: 1,
+    runtime_instance_id: null,
+    failure_count: 0,
+    restart_blocked: false,
+    last_started_at: null,
+    last_stopped_at: null,
+    preview_captured_at: null,
+    last_coordinator_error: null,
+    updated_at: "2026-01-01T00:00:00Z",
+    ...overrides,
+  });
+
+  const makeCollectionItem = (
+    overrides: Partial<ProfileCollectionItem> = {},
+  ): ProfileCollectionItem =>
+    ({
+      id: "p1",
+      name: "Profile 1",
+      display_number: 1,
+      fingerprint_seed: 100,
+      user_data_dir: "/data/p1",
+      current_config_version: 1,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+      capture_preview: true,
+      runtime: makeProjection(),
+      ...overrides,
+    }) as ProfileCollectionItem;
+
+  const seedCollection = (
+    items: ProfileCollectionItem[],
+    params: object = {},
+  ) => {
+    queryClient.setQueryData<ProfileCollectionPage>(
+      profileKeys.collection(params),
+      { items, total: items.length, page: 1, page_size: 50 },
+    );
+  };
+
+  const collectionRow = (params: object = {}) =>
+    queryClient.getQueryData<ProfileCollectionPage>(
+      profileKeys.collection(params),
+    )?.items?.[0];
 
   it("fetches profile list using TanStack Query", async () => {
     const { result } = renderHook(() => useProfilesQuery(mockApiClient), {
@@ -209,6 +268,7 @@ describe("useProfilesQuery & SSE Sync", () => {
         sseCallback({
           profile_id: "p1",
           config_version: 1,
+          state_revision: 2,
           desired_state: "running",
           observed_state: "running",
           runtime_instance_id: "inst-999",
@@ -253,6 +313,7 @@ describe("useProfilesQuery & SSE Sync", () => {
         sseCallback({
           profile_id: "p1",
           config_version: 1,
+          state_revision: 2,
           desired_state: "running",
           observed_state: "starting",
           runtime_instance_id: "inst-42",
@@ -282,6 +343,7 @@ describe("useProfilesQuery & SSE Sync", () => {
         sseCallback({
           profile_id: "uncached",
           config_version: 1,
+          state_revision: 1,
           desired_state: "running",
           observed_state: "running",
           runtime_instance_id: "inst-1",
@@ -298,46 +360,21 @@ describe("useProfilesQuery & SSE Sync", () => {
     expect(queryClient.getQueryData(profileKeys.runtime("uncached"))).toBeUndefined();
   });
 
-  // t076 review f001: list/entry pages read only the batched summary,
-  // so the per-profile runtime cache is empty on first open — the
-  // event must still reach the summary (fenced by the summary
-  // entry's own version/instance), without synthesizing a runtime
-  // entry.
-  it("updates the runtime summary from an SSE event when no per-profile runtime cache exists", async () => {
-    queryClient.setQueryData<RuntimeSummaryResponse>(
-      profileKeys.runtimeSummary(),
-      {
-        entries: [
-          {
-            profile_id: "p1",
-            desired_state: "stopped",
-            observed_state: "stopped",
-            config_version: 1,
-            runtime_instance_id: null,
-            failure_count: 0,
-            restart_blocked: false,
-            last_started_at: null,
-            last_stopped_at: null,
-            preview_captured_at: null,
-            last_coordinator_error: null,
-            updated_at: "2026-01-01T00:00:00Z",
-          },
-        ],
-        running_count: 0,
-      },
-    );
+  // t098 (ex-t076 review f001): list/entry pages read the collection
+  // rows, so the per-profile runtime cache is empty on first open —
+  // the event must still reach the row's projection (fenced by the
+  // row's own state_revision), without synthesizing a runtime entry.
+  it("updates the collection row from an SSE event when no per-profile runtime cache exists", async () => {
+    seedCollection([makeCollectionItem()]);
     renderHook(() => useProfileEventsSync(mockSseClient), {
       wrapper: createWrapper(),
     });
-    const summary = () =>
-      queryClient.getQueryData<RuntimeSummaryResponse>(
-        profileKeys.runtimeSummary(),
-      );
 
     act(() => {
       sseCallback?.({
         profile_id: "p1",
         config_version: 1,
+        state_revision: 2,
         desired_state: "running",
         observed_state: "running",
         runtime_instance_id: "inst-1",
@@ -348,21 +385,23 @@ describe("useProfilesQuery & SSE Sync", () => {
         updated_at: "2026-01-02T10:00:00Z",
       });
     });
-    expect(summary()?.entries[0]?.observed_state).toBe("running");
-    expect(summary()?.entries[0]?.runtime_instance_id).toBe("inst-1");
-    expect(summary()?.entries[0]?.last_started_at).toBe(
+    expect(collectionRow()?.runtime?.observed_state).toBe("running");
+    expect(collectionRow()?.runtime?.runtime_instance_id).toBe("inst-1");
+    expect(collectionRow()?.runtime?.last_started_at).toBe(
       "2026-01-02T10:00:00Z",
     );
-    expect(summary()?.running_count).toBe(1);
+    expect(collectionRow()?.runtime?.state_revision).toBe(2);
     // No runtime entry is synthesized from the event.
     expect(queryClient.getQueryData(profileKeys.runtime("p1"))).toBeUndefined();
 
-    // The summary entry fences stale events too: an older version
-    // must not overwrite the newer summary state.
+    // The row fences stale events too: an older revision must not
+    // overwrite the newer row state — even when it carries a HIGHER
+    // config version (the revision is the single shared fence).
     act(() => {
       sseCallback?.({
         profile_id: "p1",
-        config_version: 0,
+        config_version: 9,
+        state_revision: 1,
         desired_state: "stopped",
         observed_state: "stopped",
         runtime_instance_id: "inst-0",
@@ -371,13 +410,13 @@ describe("useProfilesQuery & SSE Sync", () => {
         updated_at: "2026-01-02T10:01:00Z",
       });
     });
-    expect(summary()?.entries[0]?.observed_state).toBe("running");
+    expect(collectionRow()?.runtime?.observed_state).toBe("running");
   });
 
   // t076 review f002: a time-only event (same states, new start time)
   // is a real change — the old change check ignored the timestamps
   // and dropped it, so rows kept showing the previous start time.
-  it("copies start/stop timestamps from an SSE event into the runtime and summary caches", async () => {
+  it("copies start/stop timestamps from an SSE event into the runtime and collection caches", async () => {
     queryClient.setQueryData(profileKeys.runtime("p1"), {
       profile_id: "p1",
       display_number: 1,
@@ -385,6 +424,7 @@ describe("useProfilesQuery & SSE Sync", () => {
       observed_state: "running",
       runtime_instance_id: "inst-1",
       config_version: 1,
+      state_revision: 1,
       failure_count: 0,
       restart_blocked: false,
       last_exit_event_id: null,
@@ -394,28 +434,16 @@ describe("useProfilesQuery & SSE Sync", () => {
       search_defaults: null,
       updated_at: "2026-01-01T10:00:00Z",
     });
-    queryClient.setQueryData<RuntimeSummaryResponse>(
-      profileKeys.runtimeSummary(),
-      {
-        entries: [
-          {
-            profile_id: "p1",
-            desired_state: "running",
-            observed_state: "running",
-            config_version: 1,
-            runtime_instance_id: "inst-1",
-            failure_count: 0,
-            restart_blocked: false,
-            last_started_at: "2026-01-01T10:00:00Z",
-            last_stopped_at: null,
-            preview_captured_at: null,
-            last_coordinator_error: null,
-            updated_at: "2026-01-01T10:00:00Z",
-          },
-        ],
-        running_count: 1,
-      },
-    );
+    seedCollection([
+      makeCollectionItem({
+        runtime: makeProjection({
+          desired_state: "running",
+          observed_state: "running",
+          runtime_instance_id: "inst-1",
+          last_started_at: "2026-01-01T10:00:00Z",
+        }),
+      }),
+    ]);
     renderHook(() => useProfileEventsSync(mockSseClient), {
       wrapper: createWrapper(),
     });
@@ -424,6 +452,7 @@ describe("useProfilesQuery & SSE Sync", () => {
       sseCallback?.({
         profile_id: "p1",
         config_version: 1,
+        state_revision: 2,
         desired_state: "running",
         observed_state: "running",
         runtime_instance_id: "inst-1",
@@ -439,16 +468,15 @@ describe("useProfilesQuery & SSE Sync", () => {
         profileKeys.runtime("p1"),
       )?.last_started_at,
     ).toBe("2026-01-02T10:00:00Z");
-    expect(
-      queryClient.getQueryData<RuntimeSummaryResponse>(
-        profileKeys.runtimeSummary(),
-      )?.entries[0]?.last_started_at,
-    ).toBe("2026-01-02T10:00:00Z");
+    expect(collectionRow()?.runtime?.last_started_at).toBe(
+      "2026-01-02T10:00:00Z",
+    );
   });
 
-  // t076 review f002: a preview capture moves the summary entry the
-  // list rows render, under the same no-regression fence.
-  it("updates the summary preview time from a preview event without a per-profile runtime cache", async () => {
+  // t098 (ex-t076 review f002): a preview capture moves the
+  // collection row's projection the list renders, under the same
+  // no-regression fence.
+  it("updates the collection row preview time from a preview event without a per-profile runtime cache", async () => {
     let previewCallback:
       | ((event: {
           profile_id: string;
@@ -461,47 +489,11 @@ describe("useProfilesQuery & SSE Sync", () => {
         previewCallback = null;
       };
     };
-    queryClient.setQueryData(profileKeys.collection({}), {
-      items: [
-        {
-          id: "p1",
-          name: "Profile 1",
-          capture_preview: true,
-        },
-      ],
-      total: 1,
-      page: 1,
-      page_size: 50,
-    });
-    queryClient.setQueryData<RuntimeSummaryResponse>(
-      profileKeys.runtimeSummary(),
-      {
-        entries: [
-          {
-            profile_id: "p1",
-            desired_state: "stopped",
-            observed_state: "stopped",
-            config_version: 1,
-            runtime_instance_id: null,
-            failure_count: 0,
-            restart_blocked: false,
-            last_started_at: null,
-            last_stopped_at: null,
-            preview_captured_at: null,
-            last_coordinator_error: null,
-            updated_at: "2026-01-01T00:00:00Z",
-          },
-        ],
-        running_count: 0,
-      },
-    );
+    seedCollection([makeCollectionItem()]);
     renderHook(() => useProfileEventsSync(mockSseClient), {
       wrapper: createWrapper(),
     });
-    const previewAt = () =>
-      queryClient.getQueryData<RuntimeSummaryResponse>(
-        profileKeys.runtimeSummary(),
-      )?.entries[0]?.preview_captured_at;
+    const previewAt = () => collectionRow()?.runtime?.preview_captured_at;
 
     act(() => {
       previewCallback?.({
@@ -521,70 +513,60 @@ describe("useProfilesQuery & SSE Sync", () => {
     expect(previewAt()).toBe("2026-01-02T10:00:00Z");
   });
 
-  // t076 review test f003: hook-level disconnect/reconnect — the sync
-  // unmounts (SSE stops) and remounts (SSE restarts), then a replayed
-  // event must bring the summary to the latest state without
-  // triggering a full summary refetch.
-  it("recovers the summary across an SSE disconnect and reconnect without refetching", async () => {
+  // t098 (ex-t076 review test f003): hook-level disconnect/reconnect
+  // — the sync unmounts (SSE stops) and remounts (SSE restarts), then
+  // a replayed event must bring the collection row to the latest
+  // state without triggering a full collection refetch.
+  it("recovers the collection across an SSE disconnect and reconnect without refetching", async () => {
+    mockApiClient.profiles.listCollection = async () => {
+      collectionCallCount += 1;
+      return {
+        items: [makeCollectionItem()],
+        total: 1,
+        page: 1,
+        page_size: 50,
+      };
+    };
     const { result, unmount } = renderHook(
       () => ({
-        summary: useRuntimeSummaryQuery(mockApiClient),
+        collection: useProfilesCollectionQuery({}, mockApiClient),
         sse: useProfileEventsSync(mockSseClient),
       }),
       { wrapper: createWrapper() },
     );
-    await waitFor(() => expect(result.current.summary.isSuccess).toBe(true));
-    expect(summaryCallCount).toBe(1);
+    await waitFor(() =>
+      expect(result.current.collection.isSuccess).toBe(true),
+    );
+    expect(collectionCallCount).toBe(1);
 
     // Disconnect: unmounting the hook stops the SSE client and drops
     // the subscription; the QueryClient survives.
     unmount();
 
     // Reconnect: a fresh mount re-subscribes, restarts the client and
-    // refetches the summary (the server's snapshot after reconnect).
-    // The refetch is the reconnect snapshot — the replayed event after
-    // it must not trigger another one.
-    mockApiClient.profiles.getRuntimeSummary = async () => {
-      summaryCallCount += 1;
-      return {
-        entries: [
-          {
-            profile_id: "p1",
-            desired_state: "stopped",
-            observed_state: "stopped",
-            config_version: 1,
-            runtime_instance_id: null,
-            failure_count: 0,
-            restart_blocked: false,
-            last_started_at: null,
-            last_stopped_at: null,
-            preview_captured_at: null,
-            last_coordinator_error: null,
-            updated_at: "2026-01-01T00:00:00Z",
-          },
-        ],
-        running_count: 0,
-      };
-    };
+    // refetches the collection (the server's snapshot after
+    // reconnect). The refetch is the reconnect snapshot — the
+    // replayed event after it must not trigger another one.
     const second = renderHook(
       () => ({
-        summary: useRuntimeSummaryQuery(mockApiClient),
+        collection: useProfilesCollectionQuery({}, mockApiClient),
         sse: useProfileEventsSync(mockSseClient),
       }),
       { wrapper: createWrapper() },
     );
     await waitFor(() =>
-      expect(
-        second.result.current.summary.data?.entries[0]?.profile_id,
-      ).toBe("p1"),
+      expect(second.result.current.collection.data?.items?.[0]?.id).toBe(
+        "p1",
+      ),
     );
-    const callsAfterReconnect = summaryCallCount;
+    const callsAfterReconnect = collectionCallCount;
 
     // The server replays the missed state change after reconnect.
     act(() => {
       sseCallback?.({
         profile_id: "p1",
         config_version: 1,
+        state_revision: 2,
         desired_state: "running",
         observed_state: "running",
         runtime_instance_id: "inst-9",
@@ -593,13 +575,9 @@ describe("useProfilesQuery & SSE Sync", () => {
         updated_at: "2026-01-02T10:00:00Z",
       });
     });
-    const summary = queryClient.getQueryData<RuntimeSummaryResponse>(
-      profileKeys.runtimeSummary(),
-    );
-    expect(summary?.entries[0]?.observed_state).toBe("running");
-    expect(summary?.entries[0]?.runtime_instance_id).toBe("inst-9");
-    expect(summary?.running_count).toBe(1);
-    expect(summaryCallCount).toBe(callsAfterReconnect);
+    expect(collectionRow()?.runtime?.observed_state).toBe("running");
+    expect(collectionRow()?.runtime?.runtime_instance_id).toBe("inst-9");
+    expect(collectionCallCount).toBe(callsAfterReconnect);
   });
 
   it("merges search_defaults from runtime events into the cached runtime", async () => {
@@ -610,6 +588,7 @@ describe("useProfilesQuery & SSE Sync", () => {
       observed_state: "running",
       runtime_instance_id: "inst-1",
       config_version: 1,
+      state_revision: 1,
       failure_count: 0,
       restart_blocked: false,
       last_exit_event_id: null,
@@ -631,6 +610,7 @@ describe("useProfilesQuery & SSE Sync", () => {
         sseCallback({
           profile_id: "p1",
           config_version: 1,
+          state_revision: 2,
           desired_state: "running",
           observed_state: "running",
           failure_count: 0,
@@ -651,6 +631,7 @@ describe("useProfilesQuery & SSE Sync", () => {
         sseCallback({
           profile_id: "p1",
           config_version: 1,
+          state_revision: 3,
           desired_state: "running",
           observed_state: "running",
           failure_count: 0,
@@ -665,11 +646,14 @@ describe("useProfilesQuery & SSE Sync", () => {
     ).toEqual(status);
   });
 
-  // t076 AC-003: version/instance fencing — a late event from an older
-  // bound config version, or from a superseded instance at the same
-  // version, must not overwrite newer cached state; a byte-identical
-  // replay must not touch the cache at all.
-  it("ignores stale-version, stale-instance and duplicate SSE events", async () => {
+  // t098 AC-002: revision fencing — state_revision is bumped on
+  // every runtime write, so a late event from an older write (an old
+  // bound config version, or a superseded instance at the same
+  // version) always carries a lower revision and must not overwrite
+  // newer cached state; a byte-identical replay must not touch the
+  // cache at all. A genuinely newer write wins even when its config
+  // version went DOWN (a rollback is a later write, not a stale one).
+  it("ignores stale-revision, stale-instance and duplicate SSE events", async () => {
     queryClient.setQueryData(profileKeys.runtime("p1"), {
       profile_id: "p1",
       display_number: 1,
@@ -677,6 +661,7 @@ describe("useProfilesQuery & SSE Sync", () => {
       observed_state: "running",
       runtime_instance_id: "inst-new",
       config_version: 3,
+      state_revision: 5,
       failure_count: 0,
       restart_blocked: false,
       last_exit_event_id: null,
@@ -695,6 +680,7 @@ describe("useProfilesQuery & SSE Sync", () => {
         observed_state: "stopped",
         runtime_instance_id: "inst-old",
         config_version: 2,
+        state_revision: 4,
         failure_count: 0,
         restart_blocked: false,
         updated_at: "2026-11-04T00:01:00Z",
@@ -710,6 +696,7 @@ describe("useProfilesQuery & SSE Sync", () => {
         observed_state: "stopped",
         runtime_instance_id: "inst-other",
         config_version: 3,
+        state_revision: 4,
         failure_count: 0,
         restart_blocked: false,
         updated_at: "2026-11-04T00:01:00Z",
@@ -726,21 +713,41 @@ describe("useProfilesQuery & SSE Sync", () => {
         observed_state: "running",
         runtime_instance_id: "inst-new",
         config_version: 3,
+        state_revision: 5,
         failure_count: 0,
         restart_blocked: false,
         updated_at: "2026-11-04T00:00:00Z",
       });
     });
     expect(cached()).toBe(before);
+
+    // A later write at a LOWER config version (rollback) carries a
+    // higher revision and does apply.
+    act(() => {
+      sseCallback?.({
+        profile_id: "p1",
+        desired_state: "stopped",
+        observed_state: "stopped",
+        runtime_instance_id: "inst-new",
+        config_version: 2,
+        state_revision: 6,
+        failure_count: 0,
+        restart_blocked: false,
+        updated_at: "2026-11-04T00:02:00Z",
+      });
+    });
+    expect(cached()?.observed_state).toBe("stopped");
+    expect(cached()?.config_version).toBe(2);
+    expect(cached()?.state_revision).toBe(6);
   });
 
-  // t076 review f009: the two caches usually disagree on version —
-  // the summary is refetched on every list focus/remount while the
-  // per-profile runtime cache is only refetched on a detail visit.
-  // Each cache must fence by its OWN version/instance: a late v1
-  // event must not roll the v2 summary back, even when the v1
+  // t098 (ex-t076 review f009): the two caches usually disagree on
+  // revision -- a collection page is refetched on focus/remount while
+  // the per-profile runtime cache is only refetched on a detail
+  // visit. Each cache must fence by its OWN revision: a late rev-1
+  // event must not roll the rev-2 row back, even when the rev-1
   // runtime cache lets it through.
-  it("fences each cache by its own version when the caches disagree (runtime v1, summary v2)", async () => {
+  it("fences each cache by its own revision when the caches disagree (runtime rev1, row rev2)", async () => {
     queryClient.setQueryData(profileKeys.runtime("p1"), {
       profile_id: "p1",
       display_number: 1,
@@ -748,6 +755,7 @@ describe("useProfilesQuery & SSE Sync", () => {
       observed_state: "running",
       runtime_instance_id: "inst-1",
       config_version: 1,
+      state_revision: 1,
       failure_count: 0,
       restart_blocked: false,
       last_exit_event_id: null,
@@ -755,42 +763,29 @@ describe("useProfilesQuery & SSE Sync", () => {
       search_defaults: null,
       updated_at: "2026-11-04T00:00:00Z",
     });
-    queryClient.setQueryData<RuntimeSummaryResponse>(
-      profileKeys.runtimeSummary(),
-      {
-        entries: [
-          {
-            profile_id: "p1",
-            desired_state: "running",
-            observed_state: "running",
-            config_version: 2,
-            runtime_instance_id: "inst-2",
-            failure_count: 0,
-            restart_blocked: false,
-            last_started_at: "2026-11-04T00:00:00Z",
-            last_stopped_at: null,
-            preview_captured_at: null,
-            last_coordinator_error: null,
-            updated_at: "2026-11-04T00:00:00Z",
-          },
-        ],
-        running_count: 1,
-      },
-    );
+    seedCollection([
+      makeCollectionItem({
+        runtime: makeProjection({
+          desired_state: "running",
+          observed_state: "running",
+          config_version: 2,
+          state_revision: 2,
+          runtime_instance_id: "inst-2",
+          last_started_at: "2026-11-04T00:00:00Z",
+        }),
+      }),
+    ]);
     renderHook(() => useProfileEventsSync(mockSseClient), {
       wrapper: createWrapper(),
     });
-    const summary = () =>
-      queryClient.getQueryData<RuntimeSummaryResponse>(
-        profileKeys.runtimeSummary(),
-      );
 
-    // The reviewer's repro: a replayed/late v1 event for instance
-    // inst-1 arrives after the summary already moved to v2/inst-2.
+    // A replayed/late rev-1 event arrives after the row already
+    // moved to rev 2.
     act(() => {
       sseCallback?.({
         profile_id: "p1",
         config_version: 1,
+        state_revision: 1,
         desired_state: "stopped",
         observed_state: "stopped",
         runtime_instance_id: "inst-1",
@@ -799,21 +794,22 @@ describe("useProfilesQuery & SSE Sync", () => {
         updated_at: "2026-11-04T00:01:00Z",
       });
     });
-    // The v1 runtime cache's own fence passes, so it moves — but the
-    // v2 summary must not be rolled back to the old event.
+    // The rev-1 runtime cache's own fence passes (equal revision,
+    // newer timestamps), so it moves -- but the rev-2 row must not be
+    // rolled back to the old event.
     expect(
       queryClient.getQueryData<ProfileRuntimeResponse>(
         profileKeys.runtime("p1"),
       )?.observed_state,
     ).toBe("stopped");
-    expect(summary()?.entries[0]?.observed_state).toBe("running");
-    expect(summary()?.entries[0]?.config_version).toBe(2);
-    expect(summary()?.entries[0]?.runtime_instance_id).toBe("inst-2");
+    expect(collectionRow()?.runtime?.observed_state).toBe("running");
+    expect(collectionRow()?.runtime?.state_revision).toBe(2);
+    expect(collectionRow()?.runtime?.runtime_instance_id).toBe("inst-2");
   });
 
-  // t076 review f009, opposite direction: a stale v1 event passes
-  // the v1 summary's fence but must not touch the v2 runtime cache.
-  it("fences each cache by its own version when the caches disagree (runtime v2, summary v1)", async () => {
+  // Opposite direction: a stale rev-1 event passes the rev-1 row's
+  // fence but must not touch the rev-2 runtime cache.
+  it("fences each cache by its own revision when the caches disagree (runtime rev2, row rev1)", async () => {
     queryClient.setQueryData(profileKeys.runtime("p1"), {
       profile_id: "p1",
       display_number: 1,
@@ -821,6 +817,7 @@ describe("useProfilesQuery & SSE Sync", () => {
       observed_state: "running",
       runtime_instance_id: "inst-2",
       config_version: 2,
+      state_revision: 2,
       failure_count: 0,
       restart_blocked: false,
       last_exit_event_id: null,
@@ -828,40 +825,27 @@ describe("useProfilesQuery & SSE Sync", () => {
       search_defaults: null,
       updated_at: "2026-11-04T00:00:00Z",
     });
-    queryClient.setQueryData<RuntimeSummaryResponse>(
-      profileKeys.runtimeSummary(),
-      {
-        entries: [
-          {
-            profile_id: "p1",
-            desired_state: "running",
-            observed_state: "running",
-            config_version: 1,
-            runtime_instance_id: "inst-1",
-            failure_count: 0,
-            restart_blocked: false,
-            last_started_at: "2026-11-04T00:00:00Z",
-            last_stopped_at: null,
-            preview_captured_at: null,
-            last_coordinator_error: null,
-            updated_at: "2026-11-04T00:00:00Z",
-          },
-        ],
-        running_count: 1,
-      },
-    );
+    seedCollection([
+      makeCollectionItem({
+        runtime: makeProjection({
+          desired_state: "running",
+          observed_state: "running",
+          config_version: 1,
+          state_revision: 1,
+          runtime_instance_id: "inst-1",
+          last_started_at: "2026-11-04T00:00:00Z",
+        }),
+      }),
+    ]);
     renderHook(() => useProfileEventsSync(mockSseClient), {
       wrapper: createWrapper(),
     });
-    const summary = () =>
-      queryClient.getQueryData<RuntimeSummaryResponse>(
-        profileKeys.runtimeSummary(),
-      );
 
     act(() => {
       sseCallback?.({
         profile_id: "p1",
         config_version: 1,
+        state_revision: 1,
         desired_state: "stopped",
         observed_state: "stopped",
         runtime_instance_id: "inst-1",
@@ -879,26 +863,26 @@ describe("useProfilesQuery & SSE Sync", () => {
     expect(
       queryClient.getQueryData<ProfileRuntimeResponse>(
         profileKeys.runtime("p1"),
-      )?.config_version,
+      )?.state_revision,
     ).toBe(2);
-    expect(summary()?.entries[0]?.observed_state).toBe("stopped");
-    expect(summary()?.entries[0]?.config_version).toBe(1);
-    expect(summary()?.entries[0]?.last_stopped_at).toBe(
+    expect(collectionRow()?.runtime?.observed_state).toBe("stopped");
+    expect(collectionRow()?.runtime?.last_stopped_at).toBe(
       "2026-11-04T00:01:00Z",
     );
-    expect(summary()?.running_count).toBe(0);
   });
 
-  // t076 review test f010: an event without config_version predates
-  // the fence and is treated as current for both caches. The wire
-  // parser casts raw JSON (`parseProfileRuntimeEvent` returns
-  // `raw as ProfileRuntimeEvent`), so a version-less event is a real
-  // runtime input even though the generated type marks the field
-  // required — the cast below simulates exactly that wire shape.
-  // The test pins both `??` branches: the fence must let the event
-  // through, and the merge must keep each cache's own version
-  // instead of writing undefined into it.
-  it("treats a version-less SSE event as current for both caches", async () => {
+  // t098 (ex-t076 review test f010): an event without
+  // config_version/state_revision predates the fences and is treated
+  // as current for both caches via the legacy version+instance
+  // fallback. The wire parser casts raw JSON
+  // (`parseProfileRuntimeEvent` returns `raw as ProfileRuntimeEvent`),
+  // so a fence-less event is a real runtime input even though the
+  // generated type marks the fields required -- the cast below
+  // simulates exactly that wire shape. The test pins the fallback
+  // branches: the fence must let the event through, and the merge
+  // must keep each cache's own version and revision instead of
+  // writing undefined into them.
+  it("treats a fence-less SSE event as current for both caches", async () => {
     queryClient.setQueryData(profileKeys.runtime("p1"), {
       profile_id: "p1",
       display_number: 1,
@@ -906,6 +890,7 @@ describe("useProfilesQuery & SSE Sync", () => {
       observed_state: "running",
       runtime_instance_id: "inst-2",
       config_version: 2,
+      state_revision: 7,
       failure_count: 0,
       restart_blocked: false,
       last_exit_event_id: null,
@@ -913,35 +898,21 @@ describe("useProfilesQuery & SSE Sync", () => {
       search_defaults: null,
       updated_at: "2026-11-04T00:00:00Z",
     });
-    queryClient.setQueryData<RuntimeSummaryResponse>(
-      profileKeys.runtimeSummary(),
-      {
-        entries: [
-          {
-            profile_id: "p1",
-            desired_state: "running",
-            observed_state: "running",
-            config_version: 2,
-            runtime_instance_id: "inst-2",
-            failure_count: 0,
-            restart_blocked: false,
-            last_started_at: "2026-11-04T00:00:00Z",
-            last_stopped_at: null,
-            preview_captured_at: null,
-            last_coordinator_error: null,
-            updated_at: "2026-11-04T00:00:00Z",
-          },
-        ],
-        running_count: 1,
-      },
-    );
+    seedCollection([
+      makeCollectionItem({
+        runtime: makeProjection({
+          desired_state: "running",
+          observed_state: "running",
+          config_version: 2,
+          state_revision: 7,
+          runtime_instance_id: "inst-2",
+          last_started_at: "2026-11-04T00:00:00Z",
+        }),
+      }),
+    ]);
     renderHook(() => useProfileEventsSync(mockSseClient), {
       wrapper: createWrapper(),
     });
-    const summary = () =>
-      queryClient.getQueryData<RuntimeSummaryResponse>(
-        profileKeys.runtimeSummary(),
-      );
 
     act(() => {
       sseCallback?.({
@@ -964,17 +935,19 @@ describe("useProfilesQuery & SSE Sync", () => {
       desired_state: "stopped",
       runtime_instance_id: "inst-2",
       config_version: 2,
+      state_revision: 7,
       last_stopped_at: "2026-11-04T00:01:00Z",
     });
-    expect(summary()?.entries[0]).toMatchObject({
+    expect(collectionRow()?.runtime).toMatchObject({
       observed_state: "stopped",
       desired_state: "stopped",
       runtime_instance_id: "inst-2",
       config_version: 2,
+      state_revision: 7,
       last_stopped_at: "2026-11-04T00:01:00Z",
     });
-    expect(summary()?.running_count).toBe(0);
   });
+
 
   it("invalidates group and profile lists on a groups_changed event (t056 A31)", async () => {
     let referenceCallback: ((event: ReferenceChangedEvent) => void) | null =
@@ -1060,4 +1033,327 @@ describe("useProfilesQuery & SSE Sync", () => {
       completed: 2,
     });
   });
+  // t098 AC-003: a member row whose state crosses the page's status
+  // filter boundary must not be merged in place -- the page is
+  // invalidated so the server reconverges membership and total.
+  it("invalidates a status-filtered page when a member crosses the filter boundary", async () => {
+    seedCollection(
+      [
+        makeCollectionItem({
+          runtime: makeProjection({
+            desired_state: "running",
+            observed_state: "running",
+            state_revision: 3,
+          }),
+        }),
+      ],
+      { status: "running_exact" },
+    );
+    renderHook(() => useProfileEventsSync(mockSseClient), {
+      wrapper: createWrapper(),
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    act(() => {
+      sseCallback?.({
+        profile_id: "p1",
+        config_version: 1,
+        state_revision: 4,
+        desired_state: "stopped",
+        observed_state: "stopped",
+        runtime_instance_id: null,
+        failure_count: 0,
+        restart_blocked: false,
+        updated_at: "2026-01-02T10:00:00Z",
+      });
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: profileKeys.collection({ status: "running_exact" }),
+    });
+    // The row was NOT merged in place (still shows the pre-event
+    // state until the refetch lands).
+    expect(
+      collectionRow({ status: "running_exact" })?.runtime?.observed_state,
+    ).toBe("running");
+  });
+
+  // t098 AC-003: a non-member whose new state enters a filtered
+  // page's bucket invalidates that page (the row may need to enter);
+  // a state that stays outside the bucket does nothing.
+  it("invalidates a status-filtered page when a non-member enters its bucket only", async () => {
+    seedCollection([], { status: "running_exact" });
+    renderHook(() => useProfileEventsSync(mockSseClient), {
+      wrapper: createWrapper(),
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    act(() => {
+      sseCallback?.({
+        profile_id: "p-other",
+        config_version: 1,
+        state_revision: 1,
+        desired_state: "running",
+        observed_state: "starting",
+        runtime_instance_id: "inst-x",
+        failure_count: 0,
+        restart_blocked: false,
+        updated_at: "2026-01-02T10:00:00Z",
+      });
+    });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: profileKeys.collection({ status: "running_exact" }),
+    });
+    act(() => {
+      sseCallback?.({
+        profile_id: "p-other",
+        config_version: 1,
+        state_revision: 2,
+        desired_state: "running",
+        observed_state: "running",
+        runtime_instance_id: "inst-x",
+        failure_count: 0,
+        restart_blocked: false,
+        updated_at: "2026-01-02T10:01:00Z",
+      });
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: profileKeys.collection({ status: "running_exact" }),
+    });
+  });
+
+  // t098 AC-003: a late event for a profile that already left the
+  // page (e.g. deleted) must not resurrect a row, and must not
+  // invalidate an unfiltered page either.
+  it("never resurrects a row for an off-page profile on an unfiltered page", async () => {
+    seedCollection([makeCollectionItem()]);
+    renderHook(() => useProfileEventsSync(mockSseClient), {
+      wrapper: createWrapper(),
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    act(() => {
+      sseCallback?.({
+        profile_id: "p-deleted",
+        config_version: 1,
+        state_revision: 9,
+        desired_state: "running",
+        observed_state: "running",
+        runtime_instance_id: "inst-ghost",
+        failure_count: 0,
+        restart_blocked: false,
+        updated_at: "2026-01-02T10:00:00Z",
+      });
+    });
+    const page = queryClient.getQueryData<ProfileCollectionPage>(
+      profileKeys.collection({}),
+    );
+    expect(page?.items).toHaveLength(1);
+    expect(page?.items?.[0]?.id).toBe("p1");
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: profileKeys.collection({}),
+    });
+  });
+
+  // t098 AC-002: an operation result merges into the collection row
+  // under the same revision fence.
+  it("merges a setDesiredState result into the collection row", async () => {
+    seedCollection([makeCollectionItem()]);
+    const { result } = renderHook(
+      () => ({
+        setState: useSetDesiredStateMutation(mockApiClient),
+        sse: useProfileEventsSync(mockSseClient),
+      }),
+      { wrapper: createWrapper() },
+    );
+    await act(async () => {
+      await result.current.setState.mutateAsync({
+        id: "p1",
+        state: "running",
+      });
+    });
+    expect(collectionRow()?.runtime?.observed_state).toBe("starting");
+    expect(collectionRow()?.runtime?.state_revision).toBe(2);
+  });
+
+  // t098 AC-003: the global coordinator-error alerts are invalidated
+  // exactly when an event changes a profile's alert state.
+  // t098 test review f001 (AC-002): the collection read itself races
+  // the event stream — a page requested before an event must not roll
+  // the row back when its (older) response lands after the event.
+  it("a slow collection response landing after a newer event does not roll the row back", async () => {
+    let resolveFetch:
+      | ((page: ProfileCollectionPage) => void)
+      | null = null;
+    let calls = 0;
+    mockApiClient.profiles.listCollection = async () => {
+      calls += 1;
+      if (calls === 1) {
+        return {
+          items: [
+            makeCollectionItem({
+              runtime: makeProjection({
+                state_revision: 1,
+                observed_state: "stopped",
+              }),
+            }),
+          ],
+          total: 1,
+          page: 1,
+          page_size: 50,
+        };
+      }
+      // The refetch hangs until released, then returns the same stale
+      // page it was requested with (pre-event data).
+      return new Promise<ProfileCollectionPage>((resolve) => {
+        resolveFetch = resolve;
+      });
+    };
+    const { result } = renderHook(
+      () => ({
+        collection: useProfilesCollectionQuery({}, mockApiClient),
+        sse: useProfileEventsSync(mockSseClient),
+      }),
+      { wrapper: createWrapper() },
+    );
+    await waitFor(() => expect(result.current.collection.isSuccess).toBe(true));
+    expect(collectionRow()?.runtime?.state_revision).toBe(1);
+
+    // Start the refetch (in flight), then deliver a newer event.
+    await act(async () => {
+      void result.current.collection.refetch();
+    });
+    act(() => {
+      sseCallback?.({
+        profile_id: "p1",
+        config_version: 1,
+        state_revision: 5,
+        desired_state: "running",
+        observed_state: "running",
+        runtime_instance_id: "inst-1",
+        failure_count: 0,
+        restart_blocked: false,
+        updated_at: "2026-01-01T00:00:00Z",
+      });
+    });
+    expect(collectionRow()?.runtime?.observed_state).toBe("running");
+
+    // The stale response lands now; the row must keep revision 5.
+    await act(async () => {
+      resolveFetch?.({
+        items: [
+          makeCollectionItem({
+            runtime: makeProjection({
+              state_revision: 1,
+              observed_state: "stopped",
+            }),
+          }),
+        ],
+        total: 1,
+        page: 1,
+        page_size: 50,
+      });
+    });
+    await waitFor(() =>
+      expect(result.current.collection.isFetching).toBe(false),
+    );
+    expect(collectionRow()?.runtime?.state_revision).toBe(5);
+    expect(collectionRow()?.runtime?.observed_state).toBe("running");
+  });
+
+  // t098 code review f001: an event older than the runtime cache's
+  // known revision is history — it must not invalidate a filtered
+  // collection page for a non-member, nor the alerts model.
+  it("a stale event below the runtime cache revision triggers no collection or alerts invalidation", async () => {
+    seedCollection(
+      [makeCollectionItem({ runtime: makeProjection({ state_revision: 1 }) })],
+      { status: "running" },
+    );
+    queryClient.setQueryData(profileKeys.runtime("p2"), {
+      profile_id: "p2",
+      display_number: 2,
+      desired_state: "running",
+      observed_state: "running",
+      runtime_instance_id: "inst-2",
+      config_version: 1,
+      state_revision: 9,
+      failure_count: 0,
+      restart_blocked: false,
+      last_exit_event_id: null,
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    queryClient.setQueryData(profileKeys.runtimeAlerts(), {
+      entries: [
+        {
+          profile_id: "p2",
+          display_number: 2,
+          name: "Profile 2",
+          last_coordinator_error: "current error",
+        },
+      ],
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(() => useProfileEventsSync(mockSseClient), {
+      wrapper: createWrapper(),
+    });
+    expect(result.current).toBeUndefined();
+    act(() => {
+      sseCallback?.({
+        profile_id: "p2",
+        config_version: 1,
+        state_revision: 3,
+        desired_state: "running",
+        observed_state: "running",
+        runtime_instance_id: "inst-2",
+        failure_count: 0,
+        restart_blocked: false,
+        last_coordinator_error: "stale error text",
+        updated_at: "2026-01-01T00:00:00Z",
+      });
+    });
+    expect(invalidateSpy).not.toHaveBeenCalled();
+  });
+
+  it("invalidates runtime alerts only when the coordinator error changes", async () => {
+    queryClient.setQueryData(profileKeys.runtimeAlerts(), {
+      entries: [
+        { profile_id: "p1", last_coordinator_error: "boom" },
+      ],
+    });
+    renderHook(() => useProfileEventsSync(mockSseClient), {
+      wrapper: createWrapper(),
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    act(() => {
+      sseCallback?.({
+        profile_id: "p1",
+        config_version: 1,
+        state_revision: 2,
+        desired_state: "running",
+        observed_state: "running",
+        runtime_instance_id: "inst-1",
+        failure_count: 0,
+        restart_blocked: false,
+        last_coordinator_error: "boom",
+        updated_at: "2026-01-02T10:00:00Z",
+      });
+    });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: profileKeys.runtimeAlerts(),
+    });
+    act(() => {
+      sseCallback?.({
+        profile_id: "p1",
+        config_version: 1,
+        state_revision: 3,
+        desired_state: "running",
+        observed_state: "running",
+        runtime_instance_id: "inst-1",
+        failure_count: 0,
+        restart_blocked: false,
+        last_coordinator_error: null,
+        updated_at: "2026-01-02T10:01:00Z",
+      });
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: profileKeys.runtimeAlerts(),
+    });
+  });
 });
+

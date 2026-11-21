@@ -64,6 +64,7 @@ function runtime(
     observed_state: "running",
     runtime_instance_id: "inst-1",
     config_version: 1,
+    state_revision: 1,
     failure_count: 0,
     restart_blocked: false,
     last_exit_event_id: null,

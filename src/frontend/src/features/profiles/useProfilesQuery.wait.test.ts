@@ -11,6 +11,7 @@ function runtime(state: "stopped" | "running"): ProfileRuntimeResponse {
     observed_state: state,
     runtime_instance_id: null,
     config_version: 1,
+    state_revision: 1,
     failure_count: 0,
     restart_blocked: false,
     last_exit_event_id: null,

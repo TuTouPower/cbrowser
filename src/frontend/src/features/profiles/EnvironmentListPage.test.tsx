@@ -114,6 +114,7 @@ function runtime(
     observed_state: observed,
     runtime_instance_id: "inst-1",
     config_version: 1,
+    state_revision: 1,
     failure_count: 0,
     restart_blocked: false,
     last_exit_event_id: null,
@@ -124,6 +125,28 @@ function runtime(
     last_coordinator_error: null,
     updated_at: "2026-01-01T10:00:00Z",
     ...overrides,
+  };
+}
+
+// t098: the collection row carries the runtime projection; the stub
+// derives it from the same runtime fixtures the per-profile endpoint
+// serves.
+function projectionOf(rt: ProfileRuntimeResponse) {
+  return {
+    desired_state: rt.desired_state,
+    observed_state: rt.observed_state,
+    config_version: rt.config_version,
+    state_revision: rt.state_revision,
+    runtime_instance_id: rt.runtime_instance_id,
+    failure_count: rt.failure_count,
+    restart_blocked: rt.restart_blocked,
+    last_started_at: rt.last_started_at ?? null,
+    last_stopped_at: rt.last_stopped_at ?? null,
+    preview_captured_at:
+      (rt as { preview_captured_at?: string | null }).preview_captured_at ??
+      null,
+    last_coordinator_error: rt.last_coordinator_error ?? null,
+    updated_at: rt.updated_at,
   };
 }
 
@@ -173,6 +196,9 @@ interface StubOptions {
   groups?: GroupResponse[];
   proxies?: ProxyResponse[];
   runtimes?: Record<string, ProfileRuntimeResponse>;
+  /** t098: profile ids whose collection row carries runtime: null
+   * (the server has no runtime row for them at all). */
+  noRuntimeIds?: string[];
   /** t078: profile id -> stage at which its deletion operation fails. */
   deletionFailAt?: Record<string, string>;
   updateImpl?: (id: string) => Promise<ProfileResponse>;
@@ -285,7 +311,16 @@ function makeStub(options: StubOptions = {}) {
         const pageSize = (params.page_size as number | undefined) ?? 50;
         const total = items.length;
         return {
-          items: items.slice((page - 1) * pageSize, page * pageSize),
+          items: items
+            .slice((page - 1) * pageSize, page * pageSize)
+            .map((item) => ({
+              ...item,
+              runtime: (options.noRuntimeIds ?? []).includes(item.id)
+                ? null
+                : projectionOf(
+                    runtimes[item.id] ?? runtime(item.id, "stopped"),
+                  ),
+            })),
           total,
           page,
           page_size: pageSize,
@@ -298,27 +333,7 @@ function makeStub(options: StubOptions = {}) {
       getRuntime: mockFn(
         async (id: string) => runtimes[id] ?? runtime(id, "stopped"),
       ),
-      getRuntimeSummary: mockFn(async () => ({
-        entries: Object.values(runtimes).map((entry) => ({
-          profile_id: entry.profile_id,
-          desired_state: entry.desired_state,
-          observed_state: entry.observed_state,
-          config_version: entry.config_version,
-          runtime_instance_id: entry.runtime_instance_id,
-          failure_count: entry.failure_count,
-          restart_blocked: entry.restart_blocked,
-          last_started_at: entry.last_started_at ?? null,
-          last_stopped_at: entry.last_stopped_at ?? null,
-          preview_captured_at:
-            (entry as { preview_captured_at?: string | null })
-              .preview_captured_at ?? null,
-          last_coordinator_error: entry.last_coordinator_error ?? null,
-          updated_at: entry.updated_at,
-        })),
-        running_count: Object.values(runtimes).filter(
-          (entry) => entry.observed_state === "running",
-        ).length,
-      })),
+      getRuntimeAlerts: mockFn(async () => ({ entries: [] })),
       create: mockFn(async () => profiles[0]!),
       update: mockFn(
         options.updateImpl ??
@@ -678,6 +693,22 @@ describe("EnvironmentListPage AC-001 列展示", () => {
     expect(screen.queryByTestId("env-error-tooltip-s3")).toBeNull();
   });
 
+  // t098 test review f004 (AC-001): a row whose runtime projection is
+  // absent (no runtime row server-side) reads as explicitly unknown —
+  // never as a guessed "stopped".
+  it("renders a row without a runtime projection as unknown, not stopped", async () => {
+    const profiles = [profile({ id: "s6", name: "NoRuntime" })];
+    stub = makeStub({ profiles, noRuntimeIds: ["s6"] });
+    renderPage();
+    await screen.findByTestId("env-table");
+    expect(screen.getByTestId("env-status-s6").textContent).toContain(
+      en.statusUnknown,
+    );
+    expect(screen.getByTestId("env-status-s6").textContent).not.toContain(
+      en.statusStopped,
+    );
+  });
+
   // t078 AC-006: 旧用例断言表格行显示运行时长/相对停止时间，锁定了
   // 已移除的最后活跃列，故整体替换：表格行不再出现相对时间文案，
   // 卡片布局保留该信息（p114 只点名表格列与页头统计）。
@@ -866,30 +897,24 @@ describe("EnvironmentListPage AC-004 SSE 增量", () => {
       last_coordinator_error: "sse failure",
     });
     stub.runtimes.p1 = next;
-    // t076 AC-002/AC-003: the list reads runtime state from the batched
-    // summary cache (kept in step by the SSE sync); writing the summary
-    // is the cache update the page observes.
-    const summaryEntries = Object.values(stub.runtimes).map((entry) => ({
-      profile_id: entry.profile_id,
-      desired_state: entry.desired_state,
-      observed_state: entry.observed_state,
-      config_version: entry.config_version,
-      runtime_instance_id: entry.runtime_instance_id,
-      failure_count: entry.failure_count,
-      restart_blocked: entry.restart_blocked,
-      last_started_at: entry.last_started_at ?? null,
-      last_stopped_at: entry.last_stopped_at ?? null,
-      preview_captured_at: null,
-      last_coordinator_error: entry.last_coordinator_error ?? null,
-      updated_at: entry.updated_at,
-    }));
+    // t098: the list reads runtime state from the collection row's
+    // own projection (kept in step by the SSE sync); writing the
+    // collection page is the cache update the page observes.
     act(() => {
-      queryClient.setQueryData(profileKeys.runtimeSummary(), {
-        entries: summaryEntries,
-        running_count: summaryEntries.filter(
-          (entry) => entry.observed_state === "running",
-        ).length,
-      });
+      const caches = queryClient.getQueriesData<{
+        items: Array<Record<string, unknown>>;
+      }>({ queryKey: profileKeys.collectionPrefix() });
+      for (const [key, page] of caches) {
+        if (!page) continue;
+        queryClient.setQueryData(key, {
+          ...page,
+          items: page.items.map((item) =>
+            item.id === "p1"
+              ? { ...item, runtime: projectionOf(next) }
+              : item,
+          ),
+        });
+      }
     });
 
     await waitFor(() =>
@@ -925,10 +950,12 @@ describe("EnvironmentListPage t076 集合分页", () => {
     expect(
       stub.spies.profiles.listCollection.mock.calls[0]?.[0],
     ).toMatchObject({ page: 1, page_size: 50 });
-    // t076 AC-002: runtime state comes from one summary read; the
-    // per-profile endpoint is never called for the list.
+    // t098: runtime state travels with the collection page itself;
+    // the per-profile endpoint is never called for the list.
     expect(stub.spies.profiles.getRuntime).not.toHaveBeenCalled();
-    expect(stub.spies.profiles.getRuntimeSummary).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("env-status-px-0").textContent).toContain(
+      en.statusRunning,
+    );
 
     fireEvent.click(screen.getByTestId("env-list-next-page"));
     await waitFor(() =>

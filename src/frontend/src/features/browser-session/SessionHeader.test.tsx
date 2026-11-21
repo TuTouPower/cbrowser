@@ -130,6 +130,7 @@ function runtime(
     observed_state: observed,
     runtime_instance_id: "inst-1",
     config_version: 1,
+    state_revision: 1,
     failure_count: 0,
     restart_blocked: false,
     last_exit_event_id: null,
@@ -191,7 +192,7 @@ function fixture(
   return {
     profile: profile(),
     runtime: runtime("p1", "running"),
-    profiles: [profile()],
+    profiles: [{ ...profile(), runtime: null }],
     groups: [group()],
     audioMuted: false,
     diagnosticsOpen: false,

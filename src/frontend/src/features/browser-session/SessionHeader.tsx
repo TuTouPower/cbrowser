@@ -10,6 +10,7 @@ import {
 import { useI18n, type TranslationKey } from "../../i18n";
 import type {
   GroupResponse,
+  ProfileCollectionItem,
   ProfileResponse,
   ProfileRuntimeResponse,
 } from "../../shared/api/types";
@@ -37,7 +38,7 @@ import {
 export interface SessionHeaderProps {
   profile: ProfileResponse;
   runtime: ProfileRuntimeResponse | null;
-  profiles: ProfileResponse[];
+  profiles: ProfileCollectionItem[];
   groups: GroupResponse[];
   audioMuted: boolean;
   diagnosticsOpen: boolean;
