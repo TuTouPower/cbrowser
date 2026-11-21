@@ -1355,5 +1355,235 @@ describe("useProfilesQuery & SSE Sync", () => {
       queryKey: profileKeys.runtimeAlerts(),
     });
   });
+
+  // t101 AC-001: the seen-revision watermark must be fed by collection
+  // rows alone when no runtime cache exists. A late event for a
+  // non-member of a filtered page must not invalidate it or alerts.
+  it("suppresses a late non-member event with only a collection-row watermark", async () => {
+    seedCollection([makeCollectionItem({ id: "p1" })], {
+      status: "running",
+    });
+    queryClient.setQueryData(profileKeys.runtimeAlerts(), {
+      entries: [
+        {
+          profile_id: "p2",
+          display_number: 2,
+          name: "Profile 2",
+          last_coordinator_error: "current error",
+        },
+      ],
+    });
+    renderHook(() => useProfileEventsSync(mockSseClient), {
+      wrapper: createWrapper(),
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    // Initial snapshot at rev 9 for p2 (not a member of the filtered
+    // page) establishes the watermark without any runtime cache.
+    act(() => {
+      sseCallback?.({
+        profile_id: "p2",
+        config_version: 1,
+        state_revision: 9,
+        desired_state: "running",
+        observed_state: "running",
+        runtime_instance_id: "inst-2",
+        failure_count: 0,
+        restart_blocked: false,
+        updated_at: "2026-01-01T00:00:00Z",
+      });
+    });
+    invalidateSpy.mockClear();
+    // A late rev 3 snapshot must be recognized as history even though
+    // p2 has no runtime cache entry.
+    act(() => {
+      sseCallback?.({
+        profile_id: "p2",
+        config_version: 1,
+        state_revision: 3,
+        desired_state: "running",
+        observed_state: "running",
+        runtime_instance_id: "inst-2",
+        failure_count: 0,
+        restart_blocked: false,
+        last_coordinator_error: "stale error",
+        updated_at: "2026-01-01T00:00:00Z",
+      });
+    });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: profileKeys.collection({ status: "running" }),
+    });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: profileKeys.runtimeAlerts(),
+    });
+  });
+
+  // t101 AC-001: a duplicate event at the already-seen revision must be
+  // suppressed for non-member pages too (no per-row dedup there). The
+  // watermark aggregates every collection cache, not just the page
+  // being invalidated.
+  it("suppresses a duplicate non-member event at the watermark revision", async () => {
+    seedCollection([
+      makeCollectionItem({
+        id: "p2",
+        runtime: makeProjection({
+          state_revision: 9,
+          observed_state: "running",
+          desired_state: "running",
+          runtime_instance_id: "inst-2",
+        }),
+      }),
+    ]);
+    seedCollection([makeCollectionItem({ id: "p1" })], {
+      status: "running",
+    });
+    renderHook(() => useProfileEventsSync(mockSseClient), {
+      wrapper: createWrapper(),
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    act(() => {
+      sseCallback?.({
+        profile_id: "p2",
+        config_version: 1,
+        state_revision: 9,
+        desired_state: "running",
+        observed_state: "running",
+        runtime_instance_id: "inst-2",
+        failure_count: 0,
+        restart_blocked: false,
+        updated_at: "2026-01-01T00:00:00Z",
+      });
+    });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: profileKeys.collection({ status: "running" }),
+    });
+  });
+
+  // t101 AC-002: when a history event is suppressed, a member row that
+  // would cross the status-filter boundary must stay untouched instead
+  // of being written back into the wrong bucket with a stale total.
+  it("does not write a suppressed cross-boundary member row back into the filtered page", async () => {
+    seedCollection(
+      [
+        makeCollectionItem({
+          id: "p1",
+          runtime: makeProjection({
+            state_revision: 1,
+            observed_state: "running",
+            desired_state: "running",
+          }),
+        }),
+      ],
+      { status: "running_exact" },
+    );
+    queryClient.setQueryData(profileKeys.runtime("p1"), {
+      profile_id: "p1",
+      display_number: 1,
+      desired_state: "running",
+      observed_state: "running",
+      runtime_instance_id: "inst-1",
+      config_version: 1,
+      state_revision: 9,
+      failure_count: 0,
+      restart_blocked: false,
+      last_exit_event_id: null,
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    renderHook(() => useProfileEventsSync(mockSseClient), {
+      wrapper: createWrapper(),
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    act(() => {
+      sseCallback?.({
+        profile_id: "p1",
+        config_version: 1,
+        state_revision: 5,
+        desired_state: "stopped",
+        observed_state: "stopped",
+        runtime_instance_id: "inst-1",
+        failure_count: 0,
+        restart_blocked: false,
+        updated_at: "2026-01-02T10:00:00Z",
+      });
+    });
+    expect(
+      collectionRow({ status: "running_exact" })?.runtime?.observed_state,
+    ).toBe("running");
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: profileKeys.collection({ status: "running_exact" }),
+    });
+  });
+
+  // t101 review f001 regression: a fresh event must not be mistaken for
+  // a replay of itself just because the runtime cache is about to be
+  // written with it. With a runtime cache present, a real state change
+  // still invalidates the filtered page and the alerts model.
+  it("invalidates a filtered page and alerts for a fresh event with a runtime cache present", async () => {
+    seedCollection(
+      [
+        makeCollectionItem({
+          id: "p1",
+          runtime: makeProjection({
+            state_revision: 1,
+            observed_state: "running",
+            desired_state: "running",
+            runtime_instance_id: "inst-1",
+            last_coordinator_error: "boom",
+          }),
+        }),
+      ],
+      { status: "running_exact" },
+    );
+    queryClient.setQueryData(profileKeys.runtime("p1"), {
+      profile_id: "p1",
+      display_number: 1,
+      desired_state: "running",
+      observed_state: "running",
+      runtime_instance_id: "inst-1",
+      config_version: 1,
+      state_revision: 1,
+      failure_count: 0,
+      restart_blocked: false,
+      last_exit_event_id: null,
+      preview_captured_at: null,
+      last_started_at: null,
+      last_stopped_at: null,
+      last_coordinator_error: "boom",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    queryClient.setQueryData(profileKeys.runtimeAlerts(), {
+      entries: [
+        {
+          profile_id: "p1",
+          display_number: 1,
+          name: "Profile 1",
+          last_coordinator_error: "boom",
+        },
+      ],
+    });
+    renderHook(() => useProfileEventsSync(mockSseClient), {
+      wrapper: createWrapper(),
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    act(() => {
+      sseCallback?.({
+        profile_id: "p1",
+        config_version: 1,
+        state_revision: 2,
+        desired_state: "stopped",
+        observed_state: "stopped",
+        runtime_instance_id: "inst-1",
+        failure_count: 0,
+        restart_blocked: false,
+        last_coordinator_error: null,
+        updated_at: "2026-01-02T10:00:00Z",
+      });
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: profileKeys.collection({ status: "running_exact" }),
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: profileKeys.runtimeAlerts(),
+    });
+  });
 });
 

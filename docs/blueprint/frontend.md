@@ -108,6 +108,6 @@ SSE 按事件类型分发（t040）：`shared/api/sse.ts` 解析 `event:` 行按
 ## 10. 前端状态一致性（t058）
 
 - Profile 编辑只提交与初始值不同的字段（`ProfileForm` 以差分驱动提交）；字段分类（元数据 / 即时 / 运行配置）以后端 `repository.py` 的三分常量为准，经生成类型同步，前后端逐值一致。
-- t076 起 SSE `runtime_state` 事件只原地更新对应环境的运行缓存与摘要缓存（`useProfileEventsSync`，`config_version` / 实例围栏，重复事件无副作用），不使运行查询或列表查询失效、不触发完整列表重取；重连后以服务端快照为准。摘要更新不依赖单环境运行缓存（列表/入口页首次打开时该缓存为空，事件仍按摘要条目围栏更新摘要）；事件携带的启停时间、失败计数与重启拦截同步进两份缓存，预览事件同样原地更新摘要条目的捕获时间（不倒退）。
+- t076 起 SSE `runtime_state` 事件只原地更新对应环境的运行缓存与摘要缓存（`useProfileEventsSync`，`config_version` / 实例围栏，重复事件无副作用），不使运行查询或列表查询失效、不触发完整列表重取；重连后以服务端快照为准。摘要更新不依赖单环境运行缓存（列表/入口页首次打开时该缓存为空，事件仍按摘要条目围栏更新摘要）；事件携带的启停时间、失败计数与重启拦截同步进两份缓存，预览事件同样原地更新摘要条目的捕获时间（不倒退）。t101 起事件同步以 per-profile「已见最高 revision」水位为统一见证（聚合 runtime 缓存、全部集合页行与客户端持久水位），低于水位的历史事件与同修订同投影的重复事件一律跳过集合页与 alerts 失效；被抑制的事件命中成员行且跨越状态筛选边界时该行保持原样、总数不变，成员与状态由服务端下一次收敛决定，不再就地写回筛选页。
 - 会话阶段与错误文案的单一权威是 `runtimeQuery`：`SessionPage` 把 `runtimeQuery.data?.observed_state` 作为唯一 `runtimeState` 传入 `useBrowserSession`。
 - 错误边界分层：`ErrorBoundary.componentDidCatch` 经前端日志通道记录；路由内容由 `RouteErrorBoundary` 包裹，随路由切换复位。
