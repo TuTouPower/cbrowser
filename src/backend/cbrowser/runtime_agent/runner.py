@@ -453,6 +453,49 @@ class BrowserRunner:
         """Second launch-argument gate applied immediately before launch."""
         return validate_launch_args(args)
 
+    # Chromium Preferences values for the native shell theme (spike
+    # s027, verified on the pinned engine): 1 = light, 2 = dark.
+    _NATIVE_COLOR_SCHEMES = {"light": 1, "dark": 2}
+
+    def _apply_native_color_scheme(self, color_scheme: str) -> None:
+        """Merge the bound color scheme into this Profile's Preferences.
+
+        Writes ``browser.theme.color_scheme2`` for the native shell
+        and pins ``extensions.theme.system_theme`` to 0 so the
+        Chromium built-in theme (not a GTK system theme) decides the
+        shell appearance. Existing Preferences content is preserved;
+        a missing, unreadable or malformed Preferences file starts
+        from an empty document, matching Chromium's own recovery.
+        Write failures propagate (fail-closed): the caller treats a
+        scheme that cannot be recorded as a start failure.
+        """
+        preferences_path = self.user_data_dir / "Default" / "Preferences"
+        preferences: dict[str, Any] = {}
+        try:
+            parsed = json.loads(
+                preferences_path.read_text(encoding="utf-8")
+            )
+        except (OSError, ValueError):
+            parsed = None
+        if isinstance(parsed, dict):
+            preferences = parsed
+
+        def _section(parent: dict[str, Any], key: str) -> dict[str, Any]:
+            child = parent.get(key)
+            if not isinstance(child, dict):
+                child = {}
+                parent[key] = child
+            return child
+
+        _section(_section(preferences, "browser"), "theme")[
+            "color_scheme2"
+        ] = self._NATIVE_COLOR_SCHEMES[color_scheme]
+        _section(_section(preferences, "extensions"), "theme")[
+            "system_theme"
+        ] = 0
+        preferences_path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(preferences_path, preferences)
+
     async def _resolve_browser_version(self) -> tuple[str | None, str | None]:
         """Read CDP ``Browser.getVersion`` product and userAgent (AC-010).
 
@@ -570,6 +613,13 @@ class BrowserRunner:
         # metadata with the real binary before the process-observation wrapper
         # changes the SDK executable path. The SDK remains the only launch path.
         seed_widevine_hint(self.user_data_dir, chrome_bin)
+        # t099 (spike s027): the Profile color scheme must also drive the
+        # native Chromium shell theme, not only the web preference passed
+        # to the context below. Write the bound scheme into this
+        # Profile's Preferences before launch; the write is fail-closed
+        # (a profile that cannot record its scheme does not start with a
+        # silently mismatched shell).
+        self._apply_native_color_scheme(cfg.color_scheme)
 
         # Create wrapper to capture true Chrome process PID and exit code
         wrapper_path = self.run_dir / "chrome_wrapper.sh"

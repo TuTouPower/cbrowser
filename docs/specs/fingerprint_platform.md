@@ -1,7 +1,7 @@
 ---
 slug: fingerprint_platform
 status: active
-tasks: [baseline, t075, t080, t081, t087]
+tasks: [baseline, t075, t080, t081, t087, t099]
 ---
 # 需求规范：指纹平台与平台字体集 (fingerprint_platform)
 
@@ -16,7 +16,7 @@ tasks: [baseline, t075, t080, t081, t087]
 - `fingerprint_platform`：取值 `windows`（默认）/ `macos`；CloakBrowser 只支持这两种，无 Linux 指纹平台。
 - `font_set_id`：引用同平台、按内容寻址的不可变字体集。t075 起绑定改**后端托管**：创建与切换平台时由服务按资产目录默认规则解析（只取目录中 verified 的集，其中最近一次验证通过的胜出；t081 起完整性结论以目录记录为准，读路径不再实时哈希），创建/更新请求不再接受该字段，用户不能手选、不能置空；字体根已配置（一切真实部署）而平台无可用集时，创建/切换在写入前失败。未配置字体根的进程（字体子系统不在其职责内，如门禁测试 harness）创建可暂无绑定，但启动与就绪仍失败封闭，该状态在真实部署中不可达（deploy 恒设字体根）。克隆等携带既有绑定的内部路径校验后保留原绑定。
 - `include_cjk_fonts`（t075）：中文字体暴露开关，属运行配置。创建未显式给出时按语言派生（`zh-CN` 开、其余关）；运行时 fontconfig 的中文 reject 规则只看此开关、不再看 `locale`。英文关 CJK 时中文字体对 Browser 不可见，开启时集中文字体参与真实渲染匹配。
-- `color_scheme`（t075 收敛）：只允许 `light` / `dark`，默认 `light`；旧 `null` / `no-preference` 在固定引擎上都渲染为浅色，迁移统一映射为 `light`（p124 实测）。后台主题设置不改写 Profile 的提交值。
+- `color_scheme`（t075 收敛）：只允许 `light` / `dark`，默认 `light`；旧 `null` / `no-preference` 在固定引擎上都渲染为浅色，迁移统一映射为 `light`（p124 实测）。后台主题设置不改写 Profile 的提交值。t099 起同一值在 Runner 启动前同时派生浏览器原生外壳主题（`Preferences` 的 `browser.theme.color_scheme2`，spike s027 实测），网页偏好与原生外壳同源同值。
 - GPU 身份（t075，s026 / d051）：由引擎按指纹种子 + 平台自动派生，SDK 无 GPU 选择参数；`gpu_family` 字段与 `--fingerprint-gpu-vendor` 透传已删除，手选 GPU 契约取消。受支持组合只有（windows，引擎自动派生）与（macos，引擎自动派生）；旧 `nvidia` / `intel` 取值无等价映射，迁移时进阻塞清单。
 - 上述字段属运行配置；修改任一都生成新 `ProfileConfigVersion`，重建容器后生效，不影响其他 Profile。旧配置与历史快照由迁移 `0013_profile_identity.py` 一次性改写到新形状：不可等价映射（旧 GPU 取值、悬空绑定、无集可绑）在改写前整体失败并给出阻塞清单，迁移幂等，恢复口径为部署前 DB 文件级备份整体还原。
 - Runner 按绑定配置版本快照选择平台，删除写死的 `--fingerprint-platform=windows` 启动参数。

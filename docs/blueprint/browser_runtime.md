@@ -51,7 +51,7 @@ Runner 接收 SIGTERM/SIGINT 后正常关闭 SDK context 与子系统；Supervis
 
 ## 指纹平台、平台字体集与 fontconfig 白名单（t041）
 
-Profile 运行配置含 `fingerprint_platform`（`windows` 默认 / `macos`）与 `font_set_id`（引用同平台的不可变字体集），经增量迁移 `0002_fingerprint_platform.py` 加入；两者都属运行配置，修改任一都生成新 `ProfileConfigVersion`。CloakBrowser 只支持这两种指纹平台，没有 Linux 指纹平台。Runner 按绑定快照选择平台，代码中不再写死 `--fingerprint-platform=windows`。t075 起 `font_set_id` 为后端托管绑定（创建/克隆/切平台由服务按目录默认规则解析，请求不再接受该字段；字体根已配置时无可用集在写入前失败，未配置字体根的进程可暂无绑定但启动失败封闭）；新增运行配置 `include_cjk_fonts`（CJK 暴露开关，迁移 `0013_profile_identity.py`），`color_scheme` 收敛为 `light`/`dark`，`gpu_family` 删除——GPU 身份由引擎按指纹种子+平台自动派生（s026 / d051 / ADR 040）。
+Profile 运行配置含 `fingerprint_platform`（`windows` 默认 / `macos`）与 `font_set_id`（引用同平台的不可变字体集），经增量迁移 `0002_fingerprint_platform.py` 加入；两者都属运行配置，修改任一都生成新 `ProfileConfigVersion`。CloakBrowser 只支持这两种指纹平台，没有 Linux 指纹平台。Runner 按绑定快照选择平台，代码中不再写死 `--fingerprint-platform=windows`。t075 起 `font_set_id` 为后端托管绑定（创建/克隆/切平台由服务按目录默认规则解析，请求不再接受该字段；字体根已配置时无可用集在写入前失败，未配置字体根的进程可暂无绑定但启动失败封闭）；新增运行配置 `include_cjk_fonts`（CJK 暴露开关，迁移 `0013_profile_identity.py`），`color_scheme` 收敛为 `light`/`dark`，`gpu_family` 删除——GPU 身份由引擎按指纹种子+平台自动派生（s026 / d051 / ADR 040）。t099 起 Runner 在启动前把绑定 `color_scheme` 合并写入本 Profile 的 Chromium `Preferences`（`browser.theme.color_scheme2` 浅 1 / 深 2、`extensions.theme.system_theme` 固定 0），使原生外壳主题与既有网页偏好传参同源同值，既有 Preferences 内容保留、损坏文件按空文档重建，写入失败封闭（spike s027）。
 
 字体分两层，均放在 fontconfig 默认扫描路径之外：
 
