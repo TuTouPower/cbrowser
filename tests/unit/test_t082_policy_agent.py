@@ -15,6 +15,7 @@ import threading
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from cbrowser.supervisor.network_policy import NetworkPolicySpec
 from cbrowser.supervisor.policy_agent import PolicyAgent, PolicyAgentExecutor
@@ -101,12 +102,14 @@ def test_identity_mismatch_is_rejected_for_every_op() -> None:
         "inspect": {"spec": SPEC, "policy_revision": 1},
         "fail_close": {},
     }
+    # t097: "role" is no longer a forgeable field — the protocol only
+    # admits "browser", so a forged role is unrepresentable in a valid
+    # request rather than merely mismatched.
     forged_values = {
         "deployment_id": "other-deployment",
         "profile_id": "other-profile",
         "runtime_instance_id": "other-instance",
         "config_version": 99,
-        "role": "stream",
         "target_container_id": "other-target",
     }
     for field, value in forged_values.items():
@@ -123,6 +126,38 @@ def test_identity_mismatch_is_rejected_for_every_op() -> None:
             assert response["ok"] is False, (field, op)
             assert response["error_code"] == "identity_mismatch", (field, op)
             assert executor.installed == [], (field, op)
+
+
+def test_stream_role_is_rejected_at_the_protocol_layer() -> None:
+    # t097 (review t097_test_f001): the Stream role must be rejected
+    # by the protocol models themselves, not only downstream — a
+    # forged role="stream" identity cannot be constructed, and a raw
+    # request payload carrying it fails validation before dispatch.
+    with pytest.raises(ValidationError):
+        PolicyAgentIdentity(
+            deployment_id="dep-1",
+            profile_id="profile-1",
+            runtime_instance_id="inst-1",
+            config_version=3,
+            role="stream",  # type: ignore[arg-type]
+            target_container_id="target-abc",
+        )
+    payload = {
+        "request_id": "req-stream",
+        "op": "inspect",
+        "identity": {
+            "deployment_id": "dep-1",
+            "profile_id": "profile-1",
+            "runtime_instance_id": "inst-1",
+            "config_version": 3,
+            "role": "stream",
+            "target_container_id": "target-abc",
+        },
+        "spec": SPEC.model_dump(mode="json"),
+        "policy_revision": 1,
+    }
+    with pytest.raises(ValidationError):
+        PolicyAgentRequest.model_validate(payload)
 
 
 def test_client_resolve_rejects_non_ip_receipts() -> None:

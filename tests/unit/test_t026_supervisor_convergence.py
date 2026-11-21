@@ -75,9 +75,6 @@ class _FakeAdapter:
     def get_network_name(self, profile_id: str) -> str:
         return "media_name"
 
-    def stream_policy_spec(self, plan, gateway_port: int, udp_mux_port: int) -> dict:
-        return {"role": "stream"}
-
     def browser_policy_spec(self, profile_id: str, container) -> dict:
         return {"role": "browser"}
 
@@ -201,23 +198,23 @@ async def test_healthy_pair_converges_to_ready_without_mutation(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_stream_policy_drift_replaces_stream_only(tmp_path):
+async def test_stream_policy_state_is_not_a_convergence_input(tmp_path):
+    # t097: the Stream has no policy and convergence never verifies,
+    # repairs or replaces it over policy state. Even a hypothetical
+    # stream-policy failure signal changes nothing: the pair converges
+    # on media attachment, Browser policy and Gateway registration.
     adapter = _FakeAdapter(tmp_path)
     adapter.stream_policy_ok = False
     gateway = _FakeGatewayControl()
     core, session, scan = _make_core(tmp_path, adapter, gateway)
-    secret_dir = adapter.validator.get_secret_dir(PROFILE)
-    secret_dir.mkdir(parents=True, exist_ok=True)
-    (secret_dir / "agent_secret.txt").write_text("x" * 40)
 
     await core._converge_session(PROFILE, session, scan)
 
-    assert "start_stream" in adapter.calls
-    assert "cleanup_container:stream_name" in adapter.calls
-    assert not any(c.startswith("cleanup_network") for c in adapter.calls)
-    # Browser identity is untouched by a Stream-only replacement.
+    assert adapter.calls == []
     assert session.browser_container_id == "c_browser"
-    assert session.stream_container_id == "c_stream_new"
+    assert session.stream_container_id == "c_stream"
+    observation = core.get_transport_observation(PROFILE)
+    assert observation.transport_state == "ready"
 
 
 @pytest.mark.asyncio
@@ -634,8 +631,10 @@ async def test_offline_recovery_without_session_uses_scan_instance(tmp_path):
 async def test_replacement_observes_recovering_mid_flight(tmp_path):
     # AC-004 / test f005: while a Stream-only replacement is in flight,
     # the transport observation reads recovering, not ready/failed.
+    # t097: the surviving replacement trigger is media-network drift
+    # (Stream policy drift no longer exists as a convergence input).
     adapter = _FakeAdapter(tmp_path)
-    adapter.stream_policy_ok = False
+    adapter.conforms = False
     gateway = _FakeGatewayControl()
     core, session, scan = _make_core(tmp_path, adapter, gateway)
     secret_dir = adapter.validator.get_secret_dir(PROFILE)
@@ -660,19 +659,28 @@ async def test_concurrent_profiles_converge_without_cross_talk(tmp_path):
     # AC-007 / test f003: two Profiles converging in the same pass keep
     # their repairs separate — one re-attaches, the other replaces its
     # Stream; neither touches the other's state.
+    # t097: prof_b's Stream replacement is triggered by its media
+    # network drifting from the fixed-endpoint spec (the surviving
+    # Stream-only replacement trigger), not by policy state.
     import asyncio as _asyncio
 
     class _PerProfileAdapter(_FakeAdapter):
         def __init__(self, root):
             super().__init__(root)
             self.attached = {"prof_a": None, "prof_b": "gw_1"}
-            self.policy = {"prof_a": True, "prof_b": False}
+            self.conformant = {"prof_a": True, "prof_b": False}
             self.per_profile_calls: list[str] = []
 
         def inspect_media_network(self, profile_id):
             body = super().inspect_media_network(profile_id)
+            body["conforms"] = self.conformant[profile_id]
+            body["plan"] = self.plan if self.conformant[profile_id] else None
             body["gateway_attached_id"] = self.attached[profile_id]
             return body
+
+        def rebuild_media_network(self, profile_id):
+            self.conformant[profile_id] = True
+            return None
 
         def attach_profile_infrastructure(
             self, profile_id, gateway_id, gateway_port=None
@@ -683,9 +691,6 @@ async def test_concurrent_profiles_converge_without_cross_talk(tmp_path):
                 "gateway_ip": self.plan.gateway_endpoint,
                 "gateway_url": f"ws://{self.plan.gateway_endpoint}:8443",
             }
-
-        def verify_container_policy(self, container, spec):
-            return self.policy[container.profile_id]
 
     adapter = _PerProfileAdapter(tmp_path)
     gateway = _FakeGatewayControl()
@@ -963,14 +968,16 @@ async def test_readiness_docker_failure_isolated_per_profile(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_readiness_missing_stream_policy_unverifiable(tmp_path):
-    # code f006 guard branch / test f006: with the Stream container
+async def test_readiness_missing_browser_policy_unverifiable(tmp_path):
+    # code f006 guard branch / test f006: with the Browser container
     # missing, policy is unknown (None) with the unverifiable
     # diagnostic — never an exception, never a guessed pass.
+    # t097: readiness policy covers the Browser only (the Stream has
+    # no policy), so the Browser is the unverifiable trigger now.
     adapter = _FakeAdapter(tmp_path)
     adapter.get_profile_containers = lambda pid: {
-        "browser": _Container("browser"),
-        "stream": None,
+        "browser": None,
+        "stream": _Container("stream"),
     }
     gateway = _FakeGatewayControl()
     runtime = {

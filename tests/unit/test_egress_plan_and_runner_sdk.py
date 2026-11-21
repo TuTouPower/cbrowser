@@ -71,7 +71,7 @@ def test_resolve_runtime_egress_plan_direct_vs_proxied(tmp_path: Path) -> None:
         "role": "browser",
         "allowed_tcp": [],
         "allowed_udp": [],
-        "udp_mux_port": None,
+
         "proxy_enforced": False,
     }
 
@@ -98,7 +98,7 @@ def test_resolve_runtime_egress_plan_direct_vs_proxied(tmp_path: Path) -> None:
         "role": "browser",
         "allowed_tcp": [("203.0.113.10", 18080)],
         "allowed_udp": [],
-        "udp_mux_port": None,
+
         "proxy_enforced": True,
     }
 
@@ -116,7 +116,7 @@ def test_derive_supervisor_egress_plan_fails_closed_on_missing_or_corrupt_creds(
         "role": "browser",
         "allowed_tcp": [],
         "allowed_udp": [],
-        "udp_mux_port": None,
+
         "proxy_enforced": True,
     }
 
@@ -140,7 +140,7 @@ def test_domain_proxy_vs_literal_ip_dns_policy_for_browser(tmp_path: Path) -> No
         "role": "browser",
         "allowed_tcp": [("93.184.216.34", 8080)],
         "allowed_udp": [DOCKER_EMBEDDED_DNS],
-        "udp_mux_port": None,
+
         "proxy_enforced": True,
     }
 
@@ -161,7 +161,7 @@ def test_domain_proxy_vs_literal_ip_dns_policy_for_browser(tmp_path: Path) -> No
         "role": "browser",
         "allowed_tcp": [("fd00:22::10", 18443)],
         "allowed_udp": [],
-        "udp_mux_port": None,
+
         "proxy_enforced": True,
     }
 
@@ -428,7 +428,7 @@ def test_start_and_browser_policy_spec_parity_for_proxied_and_direct(
         "role": "browser",
         "allowed_tcp": [("203.0.113.50", 18080)],
         "allowed_udp": [],
-        "udp_mux_port": None,
+
         "proxy_enforced": True,
     }
 

@@ -561,7 +561,7 @@ t094 移除探测容器沙箱后，测速正确性与防泄露证据由两条互
 
 - 协议与状态机以单元验证（`tests/unit/test_t082_policy_agent.py`）：身份全等校验与伪造拒绝、install/inspect 幂等、旧修订重放与同修订异 spec 的围栏拒绝、刷新 replace、fail-close 确认语义、resolve 输入校验（URL/凭据/注入拒绝）、畸形与超大请求拒绝、真实 UDS 客户端往返与不可达类型化错误；协议 schema 由 `scripts/export_policy_agent_protocol.py --check` 纳入门禁漂移检查。
 - 适配器生命周期以 fake Docker + 进程内 Agent 验证（`tests/unit/test_t082_adapter_policy_agents.py`）：启动恰建一个加固形状正确的 Agent、反复 verify 零建容器零 exec、冻结派生只解析一次、上游变化刷新（replace + 修订 +1）、刷新失败保留旧冻结 spec、第二适配器接管采纳、孤儿仅在目标消失时删除、Profile 拆除同步删 Agent、fail-close 未确认报错。
-- 核心收敛以脚本化适配器验证（`tests/unit/test_t082_supervisor_policy_convergence.py`）：漂移 + 失败封闭成功不暂停、未确认则暂停精确目标、本机制暂停在复验（含重装）通过后恢复、复验不过保持暂停、Agent 不可用先定点修复后超 30 秒预算隔离、Stream Agent 不可用走 Stream-only 替换、他实例暂停记录永不恢复、Agent 事件只定点修复对应 Profile。
+- 核心收敛以脚本化适配器验证（`tests/unit/test_t082_supervisor_policy_convergence.py`）：漂移 + 失败封闭成功不暂停、未确认则暂停精确目标、本机制暂停在复验（含重装）通过后恢复、复验不过保持暂停、Agent 不可用先定点修复后超 30 秒预算隔离、他实例暂停记录永不恢复、Agent 事件只定点修复对应 Profile。t097 起 Stream 无策略收敛面：Stream 策略状态不触发替换/隔离/失败由 `test_t097_browser_only_policy_agent.py` 与收敛套件的对应新用例钉住（Agent 命名与分组、Stream 目标拒绝建 Agent、启动收敛删除 Stream Agent 并替换旧形状 Browser Agent、非 internal 媒体网络不合规）；真机隔离矩阵与升级/回退属部署验收（p159–p161），云端单测不冒充。
 - 真实内核正负例改由 Policy Agent 驱动（`tests/e2e/test_supervisor_namespace_policy_e2e.py`、`test_supervisor_ipv6_policy_e2e.py`：经生产 `PolicyAgentClient` 在真实 netns 内 install/inspect、修订围栏拒绝、Agent 移除后规则持续生效），失败封闭与清理沿 `test_supervisor_policy_failure_e2e.py`（无效 policy 镜像使 Agent 永不健康）。真实容器链路属 [deploy] 层：两项 spike（仅 NET_ADMIN 完整能力、pause 冻结语义）与 AC-010 稳态验收不以单元证据替代，顺延登记见 p132 / p133。
 
 ## 最小状态协议、缓存围栏与稳态计数（t083）

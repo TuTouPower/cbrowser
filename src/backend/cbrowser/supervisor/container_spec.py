@@ -210,15 +210,20 @@ def policy_agent_labels(
     config_version: Any,
     role: str,
     target_container_id: str,
+    profile_number: int,
     deployment_id: str | None = None,
 ) -> dict[str, str]:
-    """Labels for a persistent Policy Agent (t082, ADR 039).
+    """Labels for a persistent Policy Agent (t082, ADR 039; t097).
 
     Unlike the one-shot helpers, an Agent is bound to one exact target:
     profile, runtime instance, config version, role and the target's
     Docker container ID are all labels, so scans, takeover and orphan
     cleanup can verify the full identity before adopting or removing
-    anything.
+    anything. Since t097 the Agent exists only for the Browser target
+    and groups with the Profile's sandboxes under the shared
+    ``<prefix>-profiles`` compose project as service
+    ``<NNNN>-policy-agent``; the profile number is a label so the
+    grouping is verifiable from the labels alone.
     """
     return {
         "com.cbrowser.prefix": prefix,
@@ -229,7 +234,9 @@ def policy_agent_labels(
         "com.cbrowser.config-version": str(config_version),
         "com.cbrowser.target-role": role,
         "com.cbrowser.target-container-id": target_container_id,
+        "com.cbrowser.profile-number": f"{profile_number:04d}",
         **_instance_label(deployment_id),
+        **sandbox_compose_labels(prefix, "policy-agent", profile_number),
     }
 
 

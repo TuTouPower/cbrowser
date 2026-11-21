@@ -141,7 +141,6 @@ def test_stream_volumes_have_no_profile_or_artifact_mounts(tmp_path: Path) -> No
     runtime = data / "runtime/p1"
     mounts = stream_volumes(
         planner=planner,
-        gate=data / "control/gates/p1/inst/stream",
         x11_socket=runtime / "x11/X99",
         xauth_file=runtime / "Xauthority",
         pulse_dir=runtime / "pulse",

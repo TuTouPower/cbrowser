@@ -49,7 +49,8 @@ class PolicyAgentIdentity(BaseModel):
     profile_id: str = Field(min_length=1, max_length=128)
     runtime_instance_id: str = Field(min_length=1, max_length=128)
     config_version: int = Field(ge=0)
-    role: Literal["browser", "stream"]
+    # Browser-only since t097: Stream targets have no Policy Agent.
+    role: Literal["browser"]
     target_container_id: str = Field(min_length=1, max_length=128)
 
 

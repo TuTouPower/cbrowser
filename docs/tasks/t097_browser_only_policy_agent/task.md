@@ -27,11 +27,13 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：每个运行中的 Profile 恰有一个绑定本 Browser 实例的 Policy Agent。同组显示 `<NNNN>-browser`、`<NNNN>-stream` 和 `<NNNN>-policy-agent`，容器名与环境稳定编号一一对应。重启 Supervisor 后对符合身份的资源收敛为同一组且无重复；停止后本 Profile 的 Agent 随之清理，其它环境及部署资源不受影响。
-- [ ] AC-002：Stream 启动、重建和稳态收敛全程无专属 Policy Agent 及策略就绪等待。信令注册或媒体故障只触发对应恢复，Stream 替换后保留当前 Browser 会话和页面；Gateway 重启后可重新注册。
-- [ ] AC-003：配置代理的 Browser 只能经指定代理和必要控制通道通信，策略无法确认或发生漂移时对应 Browser 进入既定失败封闭流程，其它 Profile 和 Stream 资源不因名称或实例相近而被接管、暂停或清理。
-- [ ] [deploy] AC-004：目标 OrbStack 上，本机 Chrome 能观看、收听和操作同一个 Profile，媒体只从宿主回环入口接收。Stream 只使用约定的 Gateway 信令与本机媒体通道，隔离验证覆盖公网、局域网、宿主其它服务、Browser 与其它 Profile 的网络边界，以及有 IPv6 时的双栈行为。网络配置失配时不得把越界的 Stream 标记为可用。
-- [ ] [deploy] AC-005：隔离部署从仍有两类 Agent 的 release 升级后，运行意愿和 Profile 数据保留，所有受影响环境按新形状收敛且无旧 Agent 残留。回退到受支持的上一 release 后，原有媒体和 Browser 代理功能恢复，且无跨部署清理。
+- [x] AC-001：每个运行中的 Profile 恰有一个绑定本 Browser 实例的 Policy Agent。同组显示 `<NNNN>-browser`、`<NNNN>-stream` 和 `<NNNN>-policy-agent`，容器名与环境稳定编号一一对应。重启 Supervisor 后对符合身份的资源收敛为同一组且无重复；停止后本 Profile 的 Agent 随之清理，其它环境及部署资源不受影响。
+- [x] AC-002：Stream 启动、重建和稳态收敛全程无专属 Policy Agent 及策略就绪等待。信令注册或媒体故障只触发对应恢复，Stream 替换后保留当前 Browser 会话和页面；Gateway 重启后可重新注册。
+- [x] AC-003：配置代理的 Browser 只能经指定代理和必要控制通道通信，策略无法确认或发生漂移时对应 Browser 进入既定失败封闭流程，其它 Profile 和 Stream 资源不因名称或实例相近而被接管、暂停或清理。
+- [x] [deploy] AC-004：目标 OrbStack 上，本机 Chrome 能观看、收听和操作同一个 Profile，媒体只从宿主回环入口接收。Stream 只使用约定的 Gateway 信令与本机媒体通道，隔离验证覆盖公网、局域网、宿主其它服务、Browser 与其它 Profile 的网络边界，以及有 IPv6 时的双栈行为。网络配置失配时不得把越界的 Stream 标记为可用。
+    - 处置注记（2026-11-21，用户裁定）：云端无 Docker 与真实 Chrome，本条真实验证延期本地补验，登记 p160；云端可做部分（声明式拓扑形状、Stream 无 Policy Agent、失配不判可用的代码口径）已完成并由自动测试覆盖，本打勾按裁定视为流程完成，不表示真机媒体与隔离矩阵已验证。
+- [x] [deploy] AC-005：隔离部署从仍有两类 Agent 的 release 升级后，运行意愿和 Profile 数据保留，所有受影响环境按新形状收敛且无旧 Agent 残留。回退到受支持的上一 release 后，原有媒体和 Browser 代理功能恢复，且无跨部署清理。
+    - 处置注记（2026-11-21，用户裁定）：云端无 Docker，本条真实升级/回退验证延期本地补验，登记 p161；云端可做部分（旧形状 Agent 的收敛替换逻辑与自动测试）已完成，本打勾按裁定视为流程完成，不表示真实 release 升级已验证。
 
 ### 可测试性声明
 
@@ -67,7 +69,7 @@
 
 <!-- /规范 -->
 
-- UNVERIFIED-SPIKE：固定媒体拓扑在目标 OrbStack 上能否同时满足宿主回环 UDP 发布、Gateway 信令与 Stream 出站隔离。实施前用隔离最小拓扑实测成功与拒绝矩阵，按结果选定声明式拓扑，记录回退条件。现有规则允许链路本地媒体回包，不能从回环发布直接推导等价拓扑。
+- SPIKE 处置（云端执行裁定，2026-11-21）：原待实测 spike 项「固定媒体拓扑在目标 OrbStack 上能否同时满足宿主回环 UDP 发布、Gateway 信令与 Stream 出站隔离」无法在云端执行（无 Docker/OrbStack），已登记 p159 留待本地以隔离最小拓扑实测成功与拒绝矩阵。云端按契约既定形状先行落地声明式拓扑：per-Profile 媒体网络为 internal 受管网络（无 NAT 出站），承载 Browser/Stream/Gateway 三方与 Gateway 固定端点信令，Stream 的 UDP mux 继续只发布宿主回环；该形状的真机等价性（尤其现有规则允许的链路本地媒体回包与回环发布的等价性）由 p159 实测确认，不成立时按新 ADR 的回退条件修订拓扑。云端代码与自动测试只断言声明式形状本身，不断言真机媒体行为。
 
 ### 风险与回退
 

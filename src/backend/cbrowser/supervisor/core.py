@@ -62,8 +62,6 @@ from cbrowser.domain.proxy_endpoint import (
 from cbrowser.supervisor.docker_adapter import (
     DockerAdapter,
     DockerSandboxError,
-    StreamContainerResidueError,
-    StreamResidue,
 )
 from cbrowser.supervisor.event_forwarder import (
     DELIVERED,
@@ -304,7 +302,6 @@ class SupervisorCore:
         self._registration: dict[str, RegistrationState] = {}
         self._offline_attach_log_at: dict[str, float] = {}
         self._stream_replace_attempts: dict[str, list[float]] = {}
-        self._pending_stream_residue: dict[str, StreamResidue] = {}
         self._policy_fail_closed: set[tuple[str, str]] = set()
         # t082: security-isolation ownership.  _policy_paused records
         # only targets THIS mechanism paused (profile, instance); only
@@ -748,17 +745,17 @@ class SupervisorCore:
         objects = await asyncio.to_thread(
             self.docker.get_profile_containers, profile_id
         )
-        for role in ("browser", "stream"):
-            container = objects.get(role)
-            if container is None:
-                continue
+        # t097: only the Browser has a Policy Agent; Stream containers
+        # never get one, so agent lifecycle events repair Browsers only.
+        container = objects.get("browser")
+        if container is not None:
             try:
                 await asyncio.to_thread(ensure, container)
             except DockerSandboxError:
                 logger.warning(
                     "Policy agent targeted repair failed: profile=%s role=%s",
                     profile_id,
-                    role,
+                    "browser",
                 )
 
     async def _converge_session(
@@ -807,7 +804,6 @@ class SupervisorCore:
             )
             return
         media = attachment.media or {}
-        plan = media.get("plan")
         if attachment.status == MEDIA_ATTACH_DRIFT:
             if self._stream_replacement_allowed(profile_id, instance_id):
                 logger.warning(
@@ -855,62 +851,9 @@ class SupervisorCore:
                 last_error_at=self._now_iso(),
             )
             return
-        stream_spec = self.docker.stream_policy_spec(
-            plan, self.gateway_port, session.udp_mux_port
-        )
-        try:
-            stream_policy_ok = await self._verify_with_agent_recovery(
-                profile_id, instance_id, "stream", stream_c, stream_spec
-            )
-        except DockerSandboxError:
-            if self._policy_unknown_expired(profile_id, instance_id, "stream"):
-                # Isolation for a Stream is its bounded replacement:
-                # the replacement rebuilds the Stream and its Agent,
-                # the Browser is never touched.
-                if self._stream_replacement_allowed(profile_id, instance_id):
-                    logger.warning(
-                        "Stream-only replacement: stream_policy_agent_"
-                        "unavailable profile=%s instance=%s",
-                        profile_id,
-                        instance_id,
-                    )
-                    await self._replace_stream_only(
-                        profile_id, session, rebuild_network=False
-                    )
-                else:
-                    self._update_transport(
-                        profile_id,
-                        transport_state="failed",
-                        last_error="stream_policy_agent_unavailable",
-                        last_error_at=self._now_iso(),
-                    )
-            else:
-                self._update_transport(
-                    profile_id,
-                    transport_state="recovering",
-                    last_error="policy_verify_unavailable",
-                    last_error_at=self._now_iso(),
-                )
-            return
-        if not stream_policy_ok:
-            if self._stream_replacement_allowed(profile_id, instance_id):
-                logger.warning(
-                    "Stream-only replacement: stream_policy_drift profile=%s "
-                    "instance=%s",
-                    profile_id,
-                    instance_id,
-                )
-                await self._replace_stream_only(
-                    profile_id, session, rebuild_network=False
-                )
-            else:
-                self._update_transport(
-                    profile_id,
-                    transport_state="failed",
-                    last_error="stream_policy_drift",
-                    last_error_at=self._now_iso(),
-                )
-            return
+        # t097: there is no Stream policy to verify, repair or take
+        # over — Stream isolation is the internal media topology,
+        # whose conformance was checked above via the media plan.
         browser_spec = await asyncio.to_thread(
             self.docker.browser_policy_spec, profile_id, browser_c
         )
@@ -1112,23 +1055,6 @@ class SupervisorCore:
         )
         validator = self.docker.validator
         try:
-            pending = self._pending_stream_residue.get(profile_id)
-            if pending is not None:
-                if pending.runtime_instance_id != instance_id:
-                    self._pending_stream_residue.pop(profile_id, None)
-                elif not await asyncio.to_thread(
-                    self.docker.cleanup_stream_residue, pending
-                ):
-                    self._update_transport(
-                        profile_id,
-                        transport_state="failed",
-                        stream_state="stopped",
-                        last_error="stream_residue_cleanup_failed",
-                        last_error_at=self._now_iso(),
-                    )
-                    return False
-                else:
-                    self._pending_stream_residue.pop(profile_id, None)
             stream_name = self.docker.get_stream_container_name(profile_id)
             await asyncio.to_thread(
                 self.docker.cleanup_container_by_name, stream_name
@@ -1190,23 +1116,6 @@ class SupervisorCore:
                 last_attached_at=self._now_iso(),
             )
             return True
-        except StreamContainerResidueError as exc:
-            self._pending_stream_residue[profile_id] = exc.residue
-            logger.warning(
-                "Stream replacement residue pending cleanup: profile=%s "
-                "instance=%s error_type=%s",
-                profile_id,
-                instance_id,
-                exc.cause_type,
-            )
-            self._update_transport(
-                profile_id,
-                transport_state="failed",
-                stream_state="stopped",
-                last_error="stream_replacement_residue_pending",
-                last_error_at=self._now_iso(),
-            )
-            return False
         except (DockerSandboxError, OSError, ValueError) as exc:
             logger.warning(
                 "Stream-only replacement failed: profile=%s error_type=%s",
@@ -1346,23 +1255,11 @@ class SupervisorCore:
         )
         if not checks["attach"]:
             diagnostics.append("gateway_not_attached_at_fixed_endpoint")
-        plan = media.get("plan")
-        if (
-            roles
-            and roles.get("browser") is not None
-            and roles.get("stream") is not None
-            and plan is not None
-            and session is not None
-        ):
+        if roles and roles.get("browser") is not None and session is not None:
             try:
-                stream_spec = self.docker.stream_policy_spec(
-                    plan, self.gateway_port, session.udp_mux_port
-                )
-                stream_ok = await asyncio.to_thread(
-                    self.docker.verify_container_policy,
-                    roles["stream"],
-                    stream_spec,
-                )
+                # t097: readiness policy covers the Browser only; the
+                # Stream has no policy — its isolation is the media
+                # topology checked via `attach` above.
                 browser_spec = await asyncio.to_thread(
                     self.docker.browser_policy_spec, profile_id, roles["browser"]
                 )
@@ -1371,8 +1268,7 @@ class SupervisorCore:
                     roles["browser"],
                     browser_spec,
                 )
-                policy_ok = bool(stream_ok and browser_ok)
-                checks["policy"] = policy_ok
+                checks["policy"] = bool(browser_ok)
             except DockerSandboxError:
                 checks["policy"] = None
                 diagnostics.append("policy_verify_unavailable")

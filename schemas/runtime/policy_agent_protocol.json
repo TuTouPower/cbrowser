@@ -24,13 +24,10 @@
   "$defs": {
     "NetworkPolicySpec": {
       "additionalProperties": false,
-      "description": "Specification of network filtering policy for a container sandbox.",
+      "description": "Specification of network filtering policy for a container sandbox.\n\nBrowser-only since t097: the Stream has no installed policy \u2014 its\nisolation is a property of the internal media network topology.",
       "properties": {
         "role": {
-          "enum": [
-            "browser",
-            "stream"
-          ],
+          "const": "browser",
           "title": "Role",
           "type": "string"
         },
@@ -67,20 +64,6 @@
           },
           "title": "Allowed Udp",
           "type": "array"
-        },
-        "udp_mux_port": {
-          "anyOf": [
-            {
-              "maximum": 30991,
-              "minimum": 30000,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Udp Mux Port"
         },
         "proxy_enforced": {
           "default": false,
@@ -122,10 +105,7 @@
           "type": "integer"
         },
         "role": {
-          "enum": [
-            "browser",
-            "stream"
-          ],
+          "const": "browser",
           "title": "Role",
           "type": "string"
         },
