@@ -17,7 +17,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-MEDIA_SPEC_ID = "fixed-endpoint-v1"
+MEDIA_SPEC_ID = "fixed-endpoint-v2"
 
 LABEL_MEDIA_SPEC = "com.cbrowser.media-spec"
 LABEL_MEDIA_SUBNET = "com.cbrowser.media-subnet"
@@ -42,6 +42,13 @@ class MediaNetworkPlan:
 
     def subnet_network(self) -> ipaddress.IPv4Network:
         return ipaddress.ip_network(self.subnet)
+
+    @property
+    def stream_endpoint(self) -> str:
+        endpoint = self.subnet_network().broadcast_address - 2
+        if endpoint in ipaddress.ip_network(self.ip_range) or str(endpoint) == self.gateway_endpoint:
+            raise ValueError("media subnet cannot reserve a Stream endpoint")
+        return str(endpoint)
 
     def validate(self) -> None:
         subnet = ipaddress.ip_network(self.subnet)

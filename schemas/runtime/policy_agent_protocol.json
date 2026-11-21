@@ -24,7 +24,7 @@
   "$defs": {
     "NetworkPolicySpec": {
       "additionalProperties": false,
-      "description": "Specification of network filtering policy for a container sandbox.\n\nBrowser-only since t097: the Stream has no installed policy \u2014 its\nisolation is a property of the internal media network topology.",
+      "description": "Specification of network filtering policy for a container sandbox.\n\nThe Browser Policy Agent uses this spec. Stream isolation uses the\nmedia bridge's daemon-side ACL.",
       "properties": {
         "role": {
           "const": "browser",

@@ -67,6 +67,8 @@ CBROWSER_RUN_E2E=1 scripts/run_gates.sh
 
 门禁证据模式：设置 `CBROWSER_GATE_EVIDENCE_DIR=<dir>` 运行 `scripts/run_gates.sh` 时，各 suite 逐个执行到底（单 suite 失败不中止后续 suite），每 suite 的脱敏日志（`scripts/redact_evidence.py` 处理 token/password/secret/api_key/authorization 与 Bearer/会话 Cookie）、JUnit XML（pytest suite）与退出码保留在证据目录，并生成 `manifest.json`：含逐 suite 的名称、完整命令、退出码、log 与 junit 路径、运行镜像的不可变身份（`image_identity` 字段，取自同一身份校验）与总判定 `all_passed`；任一 suite 非零时总退出码非零。未设置该变量时保持默认 fail-fast 行为。
 
+同一 Docker daemon 运行正式部署时，通过 `CBROWSER_E2E_UDP_BASE` 设置测试 UDP 起点，避开已发布端口。并行 worker 从该起点每 1,000 个端口划分一组。
+
 ## gate_timeout_seconds
 
 1800

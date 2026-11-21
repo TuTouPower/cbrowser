@@ -181,6 +181,7 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
 
     try:
         await gateway.start()
+        await gateway.attach_docker_relay(d_client, prefix)
         await asyncio.to_thread(api_proc.start)
         await asyncio.to_thread(sup_proc.start)
         api_headers.update(api_proc.auth_headers)

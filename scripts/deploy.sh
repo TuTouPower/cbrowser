@@ -1101,6 +1101,36 @@ cmd_deploy() {
   echo "  Admin password: stored at $SECRETS_DIR/admin_password (value never printed)"
 }
 
+owned_media_acl_bridges() {
+  local ids id bridge
+  ids="$(docker network ls -q \
+    --filter "label=com.cbrowser.instance-id=$CBROWSER_INSTANCE_ID" \
+    --filter "label=com.cbrowser.media-spec")" || return 1
+  while IFS= read -r id; do
+    [ -n "$id" ] || continue
+    bridge="$(docker network inspect --format '{{index .Options "com.docker.network.bridge.name"}}' "$id")" || return 1
+    if [[ "$bridge" =~ ^cm[a-f0-9]{13}$ ]]; then
+      printf '%s\n' "$bridge"
+    fi
+  done <<< "$ids"
+}
+
+retire_replaced_media_acls() {
+  local previous_manifest="$1" previous_bridges="$2"
+  [ -n "$previous_bridges" ] || return 0
+  local current_bridges helper bridge
+  current_bridges="$(owned_media_acl_bridges)" || return 1
+  helper="$(manifest_field "$previous_manifest" supervisor)" || return 1
+  [[ "$helper" =~ ^sha256:[a-f0-9]{64}$ ]] || return 1
+  while IFS= read -r bridge; do
+    if ! grep -Fxq -- "$bridge" <<< "$current_bridges"; then
+      docker run --rm --pull=never --network host --read-only \
+        --cap-drop ALL --cap-add NET_ADMIN --security-opt no-new-privileges \
+        --entrypoint python3 "$helper" -m cbrowser.supervisor.media_egress remove "$bridge" || return 1
+    fi
+  done <<< "$previous_bridges"
+}
+
 cmd_rollback() {
   local target="${1:-}"
   if [ -z "$target" ]; then
@@ -1229,8 +1259,15 @@ cmd_rollback() {
   copy_into_data_volume "$target_api" "$tmp_network_dir/Caddyfile" "network"
   rm -rf "$tmp_network_dir"
 
+  local previous_bridges
+  previous_bridges="$(owned_media_acl_bridges)"
   deploy_up_and_verify "$target"
   activate_release "$target"
+  # A legacy Supervisor can replace newer bridges without knowing about
+  # their ACL tables. Retire only captured tables whose bridge is now gone.
+  if ! retire_replaced_media_acls "$RELEASES_DIR/$current.json" "$previous_bridges"; then
+    echo "Some retired media ACLs could not be cleaned up." >&2
+  fi
   echo "Rolled back to release $target and readiness-verified."
   echo "  Manifest: $target_manifest"
 }

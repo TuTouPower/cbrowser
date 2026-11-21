@@ -8,7 +8,9 @@ grants since t064 and needs no fake).
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 import secrets
 from pathlib import Path
 from typing import Any
@@ -18,8 +20,44 @@ from aiohttp import web
 from cbrowser.gateway.config import GatewayConfig
 from cbrowser.gateway.server import create_gateway_app
 from cbrowser.shared.viewer_grants import ViewerGrantAuthority
+from cbrowser.supervisor.gate_identity import gate_labels
+from docker.errors import NotFound
 
 logger = logging.getLogger("cbrowser.fixtures.production_gateway")
+
+_GATEWAY_RELAY = """
+import asyncio
+import sys
+
+port = int(sys.argv[1])
+
+async def forward(reader, writer):
+    while data := await reader.read(65536):
+        writer.write(data)
+        await writer.drain()
+
+async def relay(reader, writer):
+    upstream_writer = None
+    tasks = []
+    try:
+        upstream, upstream_writer = await asyncio.open_connection('host.docker.internal', port)
+        tasks = [asyncio.create_task(forward(reader, upstream_writer)),
+                 asyncio.create_task(forward(upstream, writer))]
+        await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        if upstream_writer is not None:
+            upstream_writer.close()
+        writer.close()
+
+async def main():
+    async with await asyncio.start_server(relay, '0.0.0.0', port) as server:
+        await server.serve_forever()
+
+asyncio.run(main())
+"""
 
 
 class ApiRuntimeLookup:
@@ -141,6 +179,7 @@ class ProductionGatewayService:
         self.app = create_gateway_app(self.config, api_client=self.api)
         self.runner: web.AppRunner | None = None
         self.site: web.TCPSite | None = None
+        self.docker_relay = None
 
     @property
     def control_url(self) -> str:
@@ -156,7 +195,32 @@ class ProductionGatewayService:
         self.site = web.TCPSite(self.runner, "127.0.0.1", self.port)
         await self.site.start()
 
+    async def attach_docker_relay(self, client, prefix: str) -> None:
+        """Give the host-side Gateway fixture a fixed endpoint on each media bridge."""
+        self.docker_relay = await asyncio.to_thread(
+            client.containers.run,
+            os.environ["CBROWSER_SUPERVISOR_TEST_IMAGE"],
+            name=f"{prefix}-gateway-relay",
+            entrypoint=["python3", "-c", _GATEWAY_RELAY, str(self.port)],
+            detach=True,
+            cap_drop=["ALL"],
+            read_only=True,
+            extra_hosts={"host.docker.internal": "host-gateway"},
+            labels=gate_labels({
+                "com.cbrowser.prefix": prefix,
+                "com.cbrowser.managed-by": "supervisor",
+                "com.cbrowser.role": "gateway",
+                "com.cbrowser.instance-id": os.environ["CBROWSER_INSTANCE_ID"],
+            }),
+        )
+
     async def stop(self) -> None:
+        if self.docker_relay is not None:
+            try:
+                await asyncio.to_thread(self.docker_relay.remove, force=True)
+            except NotFound:
+                pass
+            self.docker_relay = None
         await self.api.close()
         if self.site is not None:
             await self.site.stop()

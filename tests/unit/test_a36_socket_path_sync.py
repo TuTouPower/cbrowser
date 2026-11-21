@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import os
+import ipaddress
 from pathlib import Path
 
+from cbrowser.supervisor.address_pool import plan_for_subnet
 import pytest
 
 from cbrowser.runtime_agent import socket_root as sr
@@ -236,11 +238,20 @@ async def test_stream_container_config_env_exposes_full_agent_socket_path(
     agent_secret.chmod(0o600)
     tokens_path = secret_dir / "selkies_tokens.json"
     SelkiesTokens.generate().write_credentials_file(tokens_path)
+    adapter.inspect_media_network = MagicMock(return_value={
+        "conforms": True,
+        "bridge": "cm0000000000000",
+        "plan": plan_for_subnet(ipaddress.IPv4Network("10.0.0.0/24")),
+        "gateway_ip": "10.0.0.254",
+        "endpoints": {"gateway": "10.0.0.254"},
+    })
+    adapter._media_acl = MagicMock()
     await adapter.start_stream_container(
         profile_id="p2",
         runtime_instance_id="inst_stream",
         browser_container_name="cbrowser-p2-browser",
         udp_mux_port=30006,
+        gateway_url="ws://10.0.0.254:18080",
         agent_secret_path=agent_secret,
         selkies_tokens_path=tokens_path,
     )

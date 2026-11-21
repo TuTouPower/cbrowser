@@ -1,15 +1,9 @@
 """Run the actual Supervisor, API and sandbox topology as isolated containers.
 
-Node Replacement Notice:
-- Deprecated node: `test_supervisor_container_rpc_socket_and_instance_fenced_lifecycle`
-  (deprecated because it retained legacy port 18097 assertions and pre-t006 Gateway
-  assumptions; modifying assertions in-place violated repo non-regression policy).
-- Replaced by:
-  `test_authoritative_gateway_port_credentials_and_instance_fenced_lifecycle`
-- Replacement Coverage: Fully covers authoritative gateway port (DEFAULT_GATEWAY_PORT),
-  credential isolation (strict 0600 keys for supervisor/agent/gateway), isolated
-  bridge network topology, and instance-fenced lifecycle while preserving 100% of the
-  original business assertions.
+The previous t005 graph node expected both containers to have a
+per-container policy gate. t102 replaces that node with a check of the
+Browser gate, Stream bridge ACL topology, and the same Gateway,
+credential-isolation and instance-fenced lifecycle behavior.
 """
 
 import asyncio
@@ -70,7 +64,7 @@ async def ready(url, path, headers=None, expected_status=200):
 
 
 @pytest.mark.asyncio
-async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecycle(
+async def test_gateway_credentials_media_bridge_and_instance_fenced_lifecycle(
     tmp_path,
 ):
     require_e2e_env(
@@ -457,43 +451,64 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                     ]
                     + f":{DEFAULT_GATEWAY_PORT}"
                 )
-                for box, role in ((browser, "browser"), (stream, "stream")):
+                for box in (browser, stream):
                     assert box.attrs["HostConfig"]["RestartPolicy"]["Name"] == "no"
-                    assert box.labels["com.cbrowser.network-policy"] == "v1"
-                    gate_mount = next(
-                        mount
-                        for mount in box.attrs["Mounts"]
-                        if mount["Destination"] == "/run/cbrowser_policy"
-                    )
-                    assert gate_mount["RW"] is False
-                    assert gate_mount["Type"] == "volume"
-                    assert gate_mount["Name"] == volume_name(prefix, "runtime")
-                    gate_host_mount = next(
-                        mount
-                        for mount in box.attrs["HostConfig"]["Mounts"]
-                        if mount["Target"] == "/run/cbrowser_policy"
-                    )
-                    gate_subpath = (
-                        (gate_host_mount.get("VolumeOptions") or {}).get("Subpath")
-                        or ""
-                    )
-                    assert gate_subpath.startswith(
-                        f"gates/{profile}/{session['runtime_instance_id']}/{role}_"
-                    ), gate_subpath
-                    gate_rel = gate_subpath.removeprefix("gates/")
-                    gate_res = supervisor.exec_run(
-                        ["cat", f"/data/control/gates/{gate_rel}/ready.json"]
-                    )
-                    assert gate_res.exit_code == 0, gate_res.output
-                    assert json.loads(gate_res.output) == {
-                        "instance_id": session["runtime_instance_id"],
-                        "role": role,
-                        "status": "ready",
-                    }
                     assert all(
                         mount["Destination"] != "/var/run/docker.sock"
                         for mount in box.attrs["Mounts"]
                     )
+
+                assert browser.labels["com.cbrowser.network-policy"] == "v1"
+                gate_mount = next(
+                    mount
+                    for mount in browser.attrs["Mounts"]
+                    if mount["Destination"] == "/run/cbrowser_policy"
+                )
+                assert gate_mount["RW"] is False
+                assert gate_mount["Type"] == "volume"
+                assert gate_mount["Name"] == volume_name(prefix, "runtime")
+                gate_host_mount = next(
+                    mount
+                    for mount in browser.attrs["HostConfig"]["Mounts"]
+                    if mount["Target"] == "/run/cbrowser_policy"
+                )
+                gate_subpath = gate_host_mount["VolumeOptions"]["Subpath"]
+                assert gate_subpath.startswith(
+                    f"gates/{profile}/{session['runtime_instance_id']}/browser_"
+                ), gate_subpath
+                gate_rel = gate_subpath.removeprefix("gates/")
+                gate_res = supervisor.exec_run(
+                    ["cat", f"/data/control/gates/{gate_rel}/ready.json"]
+                )
+                assert gate_res.exit_code == 0, gate_res.output
+                assert json.loads(gate_res.output) == {
+                    "instance_id": session["runtime_instance_id"],
+                    "role": "browser",
+                    "status": "ready",
+                }
+
+                media = client.networks.get(media_net)
+                assert media.attrs["Driver"] == "bridge"
+                assert media.attrs["Internal"] is False
+                assert media.attrs["EnableIPv6"] is False
+                assert stream.attrs["HostConfig"]["Dns"] == ["127.0.0.1"]
+                assert stream.attrs["HostConfig"]["Sysctls"] == {
+                    "net.ipv6.conf.all.disable_ipv6": "1",
+                    "net.ipv6.conf.default.disable_ipv6": "1",
+                }
+                assert not any(
+                    mount["Destination"] == "/run/cbrowser_policy"
+                    for mount in stream.attrs["Mounts"]
+                )
+                agents = client.containers.list(
+                    all=True,
+                    filters={"label": [
+                        f"com.cbrowser.instance-id={instance_id}",
+                        f"com.cbrowser.profile-id={profile}",
+                        "com.cbrowser.role=network-policy-agent",
+                    ]},
+                )
+                assert [agent.labels["com.cbrowser.target-role"] for agent in agents] == ["browser"]
                 stream_destinations = {
                     m["Destination"]: m for m in stream.attrs["Mounts"]
                 }

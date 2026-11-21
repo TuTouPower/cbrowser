@@ -11,11 +11,13 @@ proxy credentials, URL userinfo and tokens never leak.
 from __future__ import annotations
 
 import json
+import ipaddress
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from cbrowser.supervisor.address_pool import plan_for_subnet
 from cbrowser.supervisor.docker_adapter import (
     DockerAdapter,
     DockerSandboxError,
@@ -126,12 +128,21 @@ async def test_stream_start_failure_keeps_docker_detail_redacted(tmp_path: Path)
     adapter._prepare_policy_gate = MagicMock(return_value=tmp_path / "data" / "control" / "gates" / "p1" / "inst" / "gate")
     client.containers.run.side_effect = DockerException(DETAIL)
 
+    adapter.inspect_media_network = MagicMock(return_value={
+        "conforms": True,
+        "bridge": "cm0000000000000",
+        "plan": plan_for_subnet(ipaddress.IPv4Network("10.0.0.0/24")),
+        "gateway_ip": "10.0.0.254",
+        "endpoints": {"gateway": "10.0.0.254"},
+    })
+    adapter._media_acl = MagicMock()
     with pytest.raises(DockerSandboxError) as caught:
         await adapter.start_stream_container(
             profile_id="p1",
             runtime_instance_id="inst_1",
             browser_container_name="cbrowser-p1-browser",
             udp_mux_port=30006,
+            gateway_url="ws://10.0.0.254:18080",
             agent_secret_path=agent_secret,
             selkies_tokens_path=tokens_path,
         )

@@ -6,7 +6,9 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
-RUN apt-get update && apt-get install -y --no-install-recommends iptables \
+ARG APT_MIRROR=deb.debian.org
+RUN sed -i "s|^URIs: http://deb.debian.org/|URIs: http://$APT_MIRROR/|" /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y --no-install-recommends iptables nftables \
     && rm -rf /var/lib/apt/lists/*
 
 COPY config/docker/supervisor_runtime/requirements.txt /tmp/requirements.txt

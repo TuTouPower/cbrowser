@@ -59,11 +59,23 @@ def test_verify_policy_compares_live_dump(monkeypatch):
 
     drifted = dict(expected)
     policies, rules = expected["ipv4"]
-    drifted["ipv4"] = (policies, frozenset(sorted(rules)[:-1]))  # one rule lost
+    drifted["ipv4"] = (policies, {**rules, "OUTPUT": rules["OUTPUT"][:-1]})
     monkeypatch.setattr(
         np_module, "current_filter_rules", lambda family: drifted[family]
     )
     assert verify_policy(ENFORCED_BROWSER_SPEC) is False
+
+
+@pytest.mark.parametrize("drift", ["moved", "duplicated"])
+def test_verify_policy_rejects_changed_output_chain(monkeypatch, drift):
+    rendered = render_iptables_rules(BROWSER_SPEC)
+    accept = "-A OUTPUT -j ACCEPT\n"
+    assert accept in rendered
+    changed = rendered if drift == "duplicated" else rendered.replace(accept, "")
+    changed = changed.replace("-A OUTPUT -d 0.0.0.0/8 -j DROP\n", accept + "-A OUTPUT -d 0.0.0.0/8 -j DROP\n")
+    live = {"ipv4": changed, "ipv6": render_ip6tables_rules(BROWSER_SPEC)}
+    monkeypatch.setattr(np_module, "current_filter_rules", lambda family: parse_filter_rules(live[family]))
+    assert not verify_policy(BROWSER_SPEC)
 
 
 def test_distinct_browser_specs_are_not_interchangeable(monkeypatch):

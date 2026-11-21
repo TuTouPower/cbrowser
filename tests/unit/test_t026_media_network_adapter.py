@@ -13,6 +13,7 @@ from types import SimpleNamespace
 import pytest
 from cbrowser.supervisor.address_pool import media_network_labels, plan_for_subnet
 from cbrowser.supervisor.docker_adapter import DockerAdapter, DockerSandboxError
+from cbrowser.supervisor.media_egress import BRIDGE_OPTION
 from cbrowser.supervisor.network_spec import network_labels
 from cbrowser.supervisor.path_validator import PathValidator
 from docker.errors import NotFound
@@ -28,16 +29,18 @@ NET_NAME = f"{PREFIX}-net-{PROFILE}"
 
 class _FakeNetwork:
     def __init__(
-        self, name: str, labels: dict, ipam_config: list, internal: bool = True
+        self, name: str, labels: dict, ipam_config: list, internal: bool = True,
+        options: dict | None = None, enable_ipv6: bool = False,
     ) -> None:
         self.name = name
         self.attrs = {
             "Labels": labels,
             "IPAM": {"Config": ipam_config},
             "Containers": {},
-            # t097: the managed media topology is internal; the fake
-            # models the current shape unless a test says otherwise.
             "Internal": internal,
+            "Driver": "bridge",
+            "EnableIPv6": enable_ipv6,
+            "Options": options or {},
         }
 
     def reload(self) -> None:
@@ -72,7 +75,8 @@ class _FakeNetworks:
         return list(self.by_name.values())
 
     def create(
-        self, name: str, driver=None, ipam=None, labels=None, internal=None
+        self, name: str, driver=None, ipam=None, labels=None, internal=None,
+        enable_ipv6=False, options=None,
     ) -> _FakeNetwork:
         config = []
         if ipam is not None:
@@ -84,11 +88,11 @@ class _FakeNetworks:
                     }
                 )
         network = _FakeNetwork(
-            name, labels or {}, config, internal=bool(internal)
+            name, labels or {}, config, internal=bool(internal), options=options, enable_ipv6=enable_ipv6
         )
         self.by_name[name] = network
         self.created.append(
-            {"name": name, "ipam": ipam, "labels": labels, "internal": internal}
+            {"name": name, "ipam": ipam, "labels": labels, "internal": internal, "options": options}
         )
         return network
 
@@ -141,7 +145,7 @@ def _client() -> SimpleNamespace:
 
 
 @pytest.mark.asyncio
-async def test_create_allocates_explicit_subnet_range_and_labels(tmp_path):
+async def test_create_allocates_fixed_endpoints_on_a_guarded_routable_bridge(tmp_path):
     client = _client()
     adapter = _adapter(tmp_path, client)
 
@@ -151,16 +155,17 @@ async def test_create_allocates_explicit_subnet_range_and_labels(tmp_path):
     pool = created["ipam"]["Config"][0]
     assert pool["Subnet"] == "10.251.0.0/24"
     assert pool["IPRange"] == "10.251.0.0/25"
-    assert created["labels"]["com.cbrowser.media-spec"] == "fixed-endpoint-v1"
+    assert created["labels"]["com.cbrowser.media-spec"] == "fixed-endpoint-v2"
     assert created["labels"]["com.cbrowser.gateway-endpoint"] == "10.251.0.254"
-    # t097: the media topology is internal — Stream egress isolation
-    # is a property of the network itself.
-    assert created["internal"] is True
+    assert created["internal"] is False
+    assert created["options"][BRIDGE_OPTION].startswith("cm")
+    assert plan_for_subnet(ipaddress.ip_network(pool["Subnet"])).stream_endpoint == "10.251.0.253"
     assert network.name == NET_NAME
 
     inspection = adapter.inspect_media_network(PROFILE)
     assert inspection["exists"] is True
     assert inspection["conforms"] is True
+    assert inspection["bridge"] == created["options"][BRIDGE_OPTION]
 
 
 @pytest.mark.asyncio
@@ -180,10 +185,7 @@ async def test_pre_spec_network_is_not_conforming(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_routable_network_is_not_conforming(tmp_path):
-    # t097: a pre-t097 media network with the full fixed-endpoint
-    # plan but a routable (non-internal) topology does not conform —
-    # reconcile rebuilds it into the internal shape.
+async def test_bridge_without_the_expected_acl_identity_is_not_conforming(tmp_path):
     plan = plan_for_subnet(ipaddress.ip_network("10.251.0.0/24"))
     client = _client()
     client.networks.by_name[NET_NAME] = _FakeNetwork(

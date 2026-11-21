@@ -56,6 +56,8 @@ t097 把 per-Profile 媒体网络改为 `bridge + internal + 显式 subnet`，St
 - 触发 t097 ADR 回退条件：媒体网改回可路由 bridge 的同时，须以等价声明式手段恢复 Stream 出站拒绝（网络级出口 ACL），**不得**恢复 Stream Policy Agent 与命令式规则巡检。该回退改造尚未实施，登记 p164 跟踪；实施后须以本报告同法重验宿主回环 UDP 发布与拒绝矩阵。
 - AC-004 当前判定：媒体观看/收听/操作在本机不成立；隔离矩阵成立。Verdict：SPIKE FAILED（发现阻断级拓扑缺陷）。
 - 已验证事实入 `docs/findings/d054_orbstack_internal_network_drops_published_ports.md`。
+- 决定：否（目标 OrbStack 的 internal 媒体网无法保留宿主回环端口发布）。
+- 后续 task：t102，恢复普通媒体网桥的回环 UDP，并在网桥层保留完整出口拒绝。
 
 ### 复现
 

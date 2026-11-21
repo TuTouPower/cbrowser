@@ -338,60 +338,65 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
         udp_mux_max_port=udp_base + 1,
         fonts_root=real_api_and_sup["fonts_root"],
     )
-    await asyncio.to_thread(sup.start)
-    c1_id = sup.container_id
+    async with contextlib.AsyncExitStack() as cleanup:
+        cleanup.callback(d_client.close)
+        cleanup.callback(cleanup_prefixed_resources, d_client, prefix)
+        cleanup.push_async_callback(gateway.stop)
+        cleanup.push_async_callback(asyncio.to_thread, sup.stop)
+        await gateway.attach_docker_relay(d_client, prefix)
+        await asyncio.to_thread(sup.start)
+        c1_id = sup.container_id
 
-    sup_url = sup.url
-    sup_headers = {"Authorization": f"Bearer {sup_token}"}
+        sup_url = sup.url
+        sup_headers = {"Authorization": f"Bearer {sup_token}"}
 
-    async with httpx.AsyncClient(
-        base_url=sup_url, headers=sup_headers, timeout=60.0, trust_env=False
-    ) as sup_client:
-        # Wait for supervisor health
-        for _ in range(100):
-            try:
-                r_h = await sup_client.get("/supervisor/v1/health")
-                if r_h.status_code == 200:
-                    break
-            except httpx.TransportError:
-                pass
-            await asyncio.sleep(0.1)
+        async with httpx.AsyncClient(
+            base_url=sup_url, headers=sup_headers, timeout=60.0, trust_env=False
+        ) as sup_client:
+            # Wait for supervisor health
+            for _ in range(100):
+                try:
+                    r_h = await sup_client.get("/supervisor/v1/health")
+                    if r_h.status_code == 200:
+                        break
+                except httpx.TransportError:
+                    pass
+                await asyncio.sleep(0.1)
 
-        # Start Profile via Supervisor control server
-        r_start = await sup_client.post(
-            "/supervisor/v1/profiles/start",
-            json={"profile_id": profile_id, "config_version": 1, "profile_number": profile_number},
+            # Start Profile via Supervisor control server
+            r_start = await sup_client.post(
+                "/supervisor/v1/profiles/start",
+                json={"profile_id": profile_id, "config_version": 1, "profile_number": profile_number},
+            )
+            assert r_start.status_code == 200
+            start_info = r_start.json()
+            b_cname = start_info["browser_container"]
+            s_cname = start_info["stream_container"]
+
+        # Verify both containers running
+        b_c = d_client.containers.get(b_cname)
+        s_c = d_client.containers.get(s_cname)
+        assert b_c.status == "running"
+        assert s_c.status == "running"
+
+        # 3. SIGKILL the Supervisor container!
+        await asyncio.to_thread(sup.sigkill)
+
+        # Assert Browser and Stream containers STILL running during Supervisor absence
+        b_c.reload()
+        s_c.reload()
+        assert b_c.status == "running", (
+            "Browser container must NOT die on supervisor SIGKILL"
         )
-        assert r_start.status_code == 200
-        start_info = r_start.json()
-        b_cname = start_info["browser_container"]
-        s_cname = start_info["stream_container"]
+        assert s_c.status == "running", (
+            "Stream container must NOT die on supervisor SIGKILL"
+        )
 
-    # Verify both containers running
-    b_c = d_client.containers.get(b_cname)
-    s_c = d_client.containers.get(s_cname)
-    assert b_c.status == "running"
-    assert s_c.status == "running"
+        # 4. Restart Supervisor container
+        await asyncio.to_thread(sup.restart)
+        c2_id = sup.container_id
+        assert c2_id != c1_id, "Supervisor container identity must be renewed"
 
-    # 3. SIGKILL the Supervisor container!
-    await asyncio.to_thread(sup.sigkill)
-
-    # Assert Browser and Stream containers STILL running during Supervisor absence
-    b_c.reload()
-    s_c.reload()
-    assert b_c.status == "running", (
-        "Browser container must NOT die on supervisor SIGKILL"
-    )
-    assert s_c.status == "running", (
-        "Stream container must NOT die on supervisor SIGKILL"
-    )
-
-    # 4. Restart Supervisor container
-    await asyncio.to_thread(sup.restart)
-    c2_id = sup.container_id
-    assert c2_id != c1_id, "Supervisor container identity must be renewed"
-
-    try:
         async with httpx.AsyncClient(
             base_url=sup_url, headers=sup_headers, timeout=60.0, trust_env=False
         ) as sup_client2:
@@ -482,11 +487,6 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
             )
             assert r_stop.status_code == 200
 
-    finally:
-        await asyncio.to_thread(sup.stop)
-        await gateway.stop()
-        cleanup_prefixed_resources(d_client, prefix)
-        d_client.close()
 
 
 @pytest.mark.asyncio
@@ -585,13 +585,18 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
         udp_mux_max_port=udp_base + 1,
         fonts_root=real_api_and_sup["fonts_root"],
     )
-    await asyncio.to_thread(sup.start)
-    c1_id = sup.container_id
-    sup_url = sup.url
-    sup_headers = {"Authorization": f"Bearer {sup_token}"}
-
     created_containers = []
-    try:
+    async with contextlib.AsyncExitStack() as cleanup:
+        cleanup.callback(d_client.close)
+        cleanup.callback(cleanup_prefixed_resources, d_client, prefix)
+        cleanup.push_async_callback(gateway.stop)
+        cleanup.push_async_callback(asyncio.to_thread, sup.stop)
+        await gateway.attach_docker_relay(d_client, prefix)
+        await asyncio.to_thread(sup.start)
+        c1_id = sup.container_id
+        sup_url = sup.url
+        sup_headers = {"Authorization": f"Bearer {sup_token}"}
+
         async with httpx.AsyncClient(
             base_url=sup_url, headers=sup_headers, timeout=60.0, trust_env=False
         ) as sup_client:
@@ -709,11 +714,6 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
                 },
             )
 
-    finally:
-        await asyncio.to_thread(sup.stop)
-        await gateway.stop()
-        cleanup_prefixed_resources(d_client, prefix)
-        d_client.close()
 
 
 def _probe_in_container_agent_health(container_name: str) -> dict:
@@ -853,12 +853,13 @@ async def test_supervisor_replays_diagnostic_spool_without_stopping_live_runtime
         udp_mux_max_port=udp_base + 1,
         fonts_root=real_api_and_sup["fonts_root"],
     )
-    await asyncio.to_thread(sup.start)
-    c1_id = sup.container_id
-    sup_url = sup.url
-    sup_headers = {"Authorization": f"Bearer {sup_token}"}
-
     try:
+        await gateway.attach_docker_relay(d_client, prefix)
+        await asyncio.to_thread(sup.start)
+        c1_id = sup.container_id
+        sup_url = sup.url
+        sup_headers = {"Authorization": f"Bearer {sup_token}"}
+
         async with httpx.AsyncClient(
             base_url=sup_url, headers=sup_headers, timeout=60.0, trust_env=False
         ) as sup_client:

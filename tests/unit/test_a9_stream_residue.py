@@ -70,6 +70,13 @@ def _stage(adapter, mock_client, tmp_path):
         return_value=[("127.0.0.1", 18097)]
     )
     adapter._install_network_policy = MagicMock()
+    adapter.inspect_media_network = MagicMock(return_value={
+        "conforms": True,
+        "bridge": "cm0000000000000",
+        "plan": SimpleNamespace(gateway_endpoint="10.0.0.254", stream_endpoint="10.0.0.253"),
+        "gateway_ip": "10.0.0.254",
+        "endpoints": {"gateway": "10.0.0.254"},
+    })
     return agent_secret, tokens_path
 
 
@@ -99,19 +106,15 @@ async def _call(adapter, agent_secret, tokens_path):
         runtime_instance_id="inst_1",
         browser_container_name="cbrowser-p1-browser",
         udp_mux_port=30006,
+        gateway_url="ws://10.0.0.254:8443",
+        gateway_port=8443,
         agent_secret_path=agent_secret,
         selkies_tokens_path=tokens_path,
     )
 
 
 @pytest.mark.asyncio
-async def test_stream_start_installs_no_policy_and_uses_image_entrypoint(tmp_path):
-    # t097: Stream startup ends at container creation — no policy
-    # gate preparation, no Policy Agent, no rule installation and no
-    # gated entrypoint override (the stream image's own ENTRYPOINT
-    # runs the agent). The post-creation failure modes these seams
-    # served (policy install / endpoint resolution / gate readiness)
-    # no longer exist, and neither does their reclaim path.
+async def test_stream_start_installs_bridge_acl_before_its_own_entrypoint(tmp_path):
     adapter, mock_client = _adapter(tmp_path)
     agent_secret, tokens_path = _stage(adapter, mock_client, tmp_path)
     container = _stream_container(adapter)
@@ -120,12 +123,61 @@ async def test_stream_start_installs_no_policy_and_uses_image_entrypoint(tmp_pat
     result = await _call(adapter, agent_secret, tokens_path)
 
     assert result is container
-    run_kwargs = mock_client.containers.run.call_args.kwargs
+    guard, stream = mock_client.containers.run.call_args_list
+    assert guard.kwargs["command"] == [
+        "apply", "cm0000000000000", "10.0.0.253", "10.0.0.254", "8443", "30006",
+    ]
+    assert guard.kwargs["network_mode"] == "host"
+    assert guard.kwargs["cap_add"] == ["NET_ADMIN"]
+    run_kwargs = stream.kwargs
+    assert run_kwargs["dns"] == ["127.0.0.1"]
+    assert run_kwargs["sysctls"]["net.ipv6.conf.all.disable_ipv6"] == "1"
+    mock_client.api.create_endpoint_config.assert_called_once_with(ipv4_address="10.0.0.253")
     assert "entrypoint" not in run_kwargs
     adapter._prepare_policy_gate.assert_not_called()
     adapter._install_network_policy.assert_not_called()
     adapter._resolved_endpoint.assert_not_called()
     container.remove.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_stream_is_never_created_if_the_bridge_acl_fails(tmp_path):
+    adapter, mock_client = _adapter(tmp_path)
+    agent_secret, tokens_path = _stage(adapter, mock_client, tmp_path)
+    mock_client.containers.run.side_effect = docker.errors.DockerException("ACL failed")
+
+    with pytest.raises(DockerSandboxError, match="Failed to apply media ACL"):
+        await _call(adapter, agent_secret, tokens_path)
+
+    assert mock_client.containers.run.call_count == 1
+    assert mock_client.containers.run.call_args.kwargs["command"][0] == "apply"
+
+
+@pytest.mark.parametrize("helper_fails", [False, True])
+def test_supervisor_startup_reinstalls_guard_or_stops_existing_stream(tmp_path, helper_fails):
+    adapter, mock_client = _adapter(tmp_path)
+    _stage(adapter, mock_client, tmp_path)
+    stream = _stream_container(adapter)
+    stream.attrs = {
+        "NetworkSettings": {"Ports": {"30006/udp": [{"HostIp": "127.0.0.1", "HostPort": "30006"}]}}
+    }
+    adapter.inspect_media_network.return_value["endpoints"][stream.id] = "10.0.0.253"
+    adapter.scan_active_containers = MagicMock(return_value=[{
+        "id": stream.id, "role": "stream", "status": "running", "profile_id": "p1",
+    }])
+    mock_client.containers.get.return_value = stream
+    if helper_fails:
+        mock_client.containers.run.side_effect = docker.errors.DockerException("ACL unavailable")
+
+    adapter.restore_running_media_acls(8443)
+
+    assert mock_client.containers.run.call_args.kwargs["command"] == [
+        "apply", "cm0000000000000", "10.0.0.253", "10.0.0.254", "8443", "30006",
+    ]
+    if helper_fails:
+        stream.stop.assert_called_once_with(timeout=2)
+    else:
+        stream.stop.assert_not_called()
 
 
 class _FakeAdapter:

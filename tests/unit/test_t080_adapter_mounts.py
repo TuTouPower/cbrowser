@@ -194,11 +194,21 @@ async def _start_stream(adapter: DockerAdapter, tmp_path: Path):
     adapter._resolved_endpoint = MagicMock(return_value=[("127.0.0.1", 18097)])
     adapter._install_network_policy = MagicMock()
     _stub_agent(adapter)
+    from types import SimpleNamespace
+    adapter.inspect_media_network = MagicMock(return_value={
+        "conforms": True,
+        "bridge": "cm0000000000000",
+        "plan": SimpleNamespace(gateway_endpoint="10.0.0.254", stream_endpoint="10.0.0.253"),
+        "gateway_ip": "10.0.0.254",
+        "endpoints": {"gateway": "10.0.0.254"},
+    })
     await adapter.start_stream_container(
         profile_id="p1",
         runtime_instance_id="inst_1",
         browser_container_name="cbrowser-p1-browser",
         udp_mux_port=30006,
+        gateway_url="ws://10.0.0.254:8443",
+        gateway_port=8443,
         agent_secret_path=agent_secret,
         selkies_tokens_path=tokens_path,
     )

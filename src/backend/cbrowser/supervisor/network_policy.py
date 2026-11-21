@@ -11,9 +11,6 @@ AC / Implementation Contract:
 - IPv4 & IPv6 fail-closed:
   Browser: incoming new connections denied (loopback & established permitted).
   Browser: public egress permitted; private/CGNAT/multicast denied except allowed.
-  Stream: incoming permits loopback, established, and its own UDP mux port.
-  Stream: outgoing permits the trusted Gateway and explicit endpoints.
-  Stream direct media: public ICE egress permitted for local viewers.
   Browser proxy egress: the upstream proxy endpoint plus Docker DNS
   (127.0.0.11:53/udp) are admitted past the private-range deny.
 - Atomic restore per address family using iptables-restore / ip6tables-restore.
@@ -80,8 +77,8 @@ def _validate_ip_port(v: tuple[str, int]) -> tuple[str, int]:
 class NetworkPolicySpec(BaseModel):
     """Specification of network filtering policy for a container sandbox.
 
-    Browser-only since t097: the Stream has no installed policy — its
-    isolation is a property of the internal media network topology.
+    The Browser Policy Agent uses this spec. Stream isolation uses the
+    media bridge's daemon-side ACL.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -417,16 +414,20 @@ def _canonical_rule(line: str) -> str:
     return f"-A {chain} " + " ".join(sorted(atoms))
 
 
-def parse_filter_rules(text: str) -> tuple[dict[str, str], frozenset[str]]:
+type FilterRules = tuple[dict[str, str], dict[str, tuple[str, ...]]]
+
+
+def parse_filter_rules(text: str) -> FilterRules:
     """Parse an iptables-save / iptables-restore filter table.
 
-    Returns (chain default policies, canonical rule lines). Packet/byte
-    counters are stripped and rules are canonicalized so a live
+    Returns (chain default policies, ordered canonical rules per chain).
+    Packet/byte counters are stripped while each chain's traversal order
+    and duplicate rules are preserved. A live
     `iptables-save` dump and the rendered restore script for the same
     ruleset parse to equal values.
     """
     policies: dict[str, str] = {}
-    rules: set[str] = set()
+    rules: dict[str, list[str]] = {}
     in_filter = False
     for raw_line in text.splitlines():
         line = raw_line.strip()
@@ -443,11 +444,12 @@ def parse_filter_rules(text: str) -> tuple[dict[str, str], frozenset[str]]:
             if len(fields) >= 2:
                 policies[fields[0]] = fields[1]
         elif line.startswith("-A "):
-            rules.add(_canonical_rule(line))
-    return policies, frozenset(rules)
+            chain = line.split(maxsplit=2)[1]
+            rules.setdefault(chain, []).append(_canonical_rule(line))
+    return policies, {chain: tuple(entries) for chain, entries in rules.items()}
 
 
-def rendered_filter_rules(spec: NetworkPolicySpec) -> dict[str, tuple[dict[str, str], frozenset[str]]]:
+def rendered_filter_rules(spec: NetworkPolicySpec) -> dict[str, FilterRules]:
     """The exact parsed ruleset a successful apply of ``spec`` installs."""
     return {
         "ipv4": parse_filter_rules(render_iptables_rules(spec)),
@@ -459,7 +461,7 @@ def _save_tool(family: str) -> str:
     return "iptables-save" if family == "ipv4" else "ip6tables-save"
 
 
-def current_filter_rules(family: str) -> tuple[dict[str, str], frozenset[str]]:
+def current_filter_rules(family: str) -> FilterRules:
     """Dump the live filter table of this namespace for one family."""
     result = subprocess.run(
         [_save_tool(family), "-t", "filter"],

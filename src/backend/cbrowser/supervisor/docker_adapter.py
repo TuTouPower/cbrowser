@@ -61,6 +61,7 @@ from cbrowser.shared.egress_plan import (
     parse_upstream_endpoint,
 )
 from cbrowser.supervisor.gate_identity import gate_labels
+from cbrowser.supervisor.media_egress import BRIDGE_OPTION, STREAM_SYSCTLS, bridge_name, table_name
 from cbrowser.supervisor.network_policy import NetworkPolicySpec
 from cbrowser.supervisor.policy_agent_client import (
     PolicyAgentClient,
@@ -1720,6 +1721,88 @@ with path.open('w') as output:
         used.extend(host_route_networks())
         return used
 
+    def _media_acl(self, action: str, bridge: str, *args: str) -> None:
+        if not self.policy_image or not (
+            self.policy_image.startswith("sha256:") or "@sha256:" in self.policy_image
+        ):
+            raise DockerSandboxError("Explicit immutable media ACL image is required")
+        try:
+            self._docker_call(
+                self.client.containers.run,
+                self.policy_image,
+                command=[action, bridge, *args],
+                entrypoint=["python3", "-m", "cbrowser.supervisor.media_egress"],
+                remove=True,
+                network_mode="host",
+                user="0:0",
+                read_only=True,
+                cap_drop=["ALL"],
+                cap_add=["NET_ADMIN"],
+                security_opt=["no-new-privileges"],
+            )
+        except DockerException as exc:
+            raise DockerSandboxError(
+                f"Failed to {action} media ACL for {bridge}: {docker_error_detail(exc)}"
+            ) from None
+
+    def _retire_media_acl(self, network: Any) -> None:
+        if plan_from_labels(network.attrs.get("Labels")) is not None:
+            bridge = self._media_bridge_from_network(network)
+            if bridge:
+                try:
+                    self._media_acl("remove", bridge)
+                except DockerSandboxError as exc:
+                    # The bridge is already gone. Its ACL matches no traffic;
+                    # proceed with tearing down the rest of the Profile.
+                    logger.warning(
+                        "Media bridge %s removed but ACL cleanup failed: %s", bridge, exc
+                    )
+
+    def restore_running_media_acls(self, gateway_port: int) -> None:
+        """Reassert owned media guards once, before Supervisor adopts live Streams."""
+        for stream in self.scan_active_containers():
+            if stream["role"] != "stream" or stream["status"] != "running":
+                continue
+            try:
+                container = self.client.containers.get(stream["id"])
+                media = self.inspect_media_network(stream["profile_id"])
+                bridge = media["bridge"]
+                plan = media["plan"]
+                if bridge is None:
+                    # Legacy topology remains subject to versioned reconciliation.
+                    continue
+                if not media["conforms"] or media["endpoints"].get(container.id) != plan.stream_endpoint:
+                    raise DockerSandboxError("Existing Stream has an invalid media endpoint")
+                bindings = container.attrs.get("NetworkSettings", {}).get("Ports") or {}
+                if len(bindings) != 1:
+                    raise DockerSandboxError("Existing Stream has invalid media port bindings")
+                key, addresses = next(iter(bindings.items()))
+                port, separator, protocol = key.partition("/")
+                if not (separator and protocol == "udp" and port.isdecimal() and
+                        addresses == [{"HostIp": "127.0.0.1", "HostPort": port}]):
+                    raise DockerSandboxError("Existing Stream media is not published on loopback")
+                self._media_acl("apply", bridge, plan.stream_endpoint, plan.gateway_endpoint,
+                                str(gateway_port), port)
+            except NotFound:
+                continue
+            except DockerSandboxError as exc:
+                logger.error("Stopping Stream %s without a confirmed media ACL: %s", stream["id"], exc)
+                try:
+                    container.stop(timeout=2)
+                except NotFound:
+                    pass
+
+    @staticmethod
+    def _media_bridge_from_network(network: Any) -> str | None:
+        bridge = (network.attrs.get("Options") or {}).get(BRIDGE_OPTION)
+        if not isinstance(bridge, str):
+            return None
+        try:
+            table_name(bridge)
+        except ValueError:
+            return None
+        return bridge
+
     def _ensure_media_network(self, profile_id: str) -> Any:
         """Create the Profile media network with the fixed-endpoint spec.
 
@@ -1727,10 +1810,8 @@ with path.open('w') as output:
         inspection (reconcile migrates non-conforming networks by
         rebuild). New networks always get an allocated explicit subnet:
         allocation failure is explicit, never an auto-subnet fallback.
-        The network is internal (t097): it carries only this Profile's
-        media and Gateway signalling, and the topology itself — not a
-        per-container rule set — denies the Stream any routed egress
-        to the internet, the LAN, host services or other Profiles.
+        A routable bridge preserves Docker's loopback UDP publishing.
+        Stream startup requires the daemon-side ACL for this bridge.
 
         AC-015: the allocation lock guards only the get+allocate+reserve
         phase. The Docker create runs outside it, bounded by
@@ -1769,7 +1850,9 @@ with path.open('w') as output:
                     self.client.networks.create,
                     net_name,
                     driver="bridge",
-                    internal=True,
+                    internal=False,
+                    enable_ipv6=False,
+                    options={BRIDGE_OPTION: bridge_name(uuid.uuid4().hex[:13])},
                     ipam=ipam,
                     labels=gate_labels(media_network_labels(
                         network_labels(
@@ -1800,15 +1883,15 @@ with path.open('w') as output:
         """Conformance snapshot of the Profile media network.
 
         ``conforms`` requires the recorded plan labels, a live IPAM
-        config that matches them AND the internal topology (t097);
-        anything else (missing network, pre-spec network, label/IPAM
-        drift, a routable pre-t097 network) is reported, not assumed.
+        config that matches them and the owned ACL bridge shape. Legacy
+        or inconsistent networks are reported for replacement.
         """
         net_name = self.get_network_name(profile_id)
         result: dict[str, Any] = {
             "exists": False,
             "conforms": False,
             "plan": None,
+            "bridge": None,
             "gateway_attached_id": None,
             "gateway_ip": None,
             "endpoints": {},
@@ -1847,10 +1930,14 @@ with path.open('w') as output:
                 if ip == plan.gateway_endpoint:
                     result["gateway_attached_id"] = container_id
                     result["gateway_ip"] = ip
+        result["bridge"] = self._media_bridge_from_network(network)
         result["conforms"] = bool(
             plan is not None
             and ipam_matches
-            and network.attrs.get("Internal") is True
+            and network.attrs.get("Driver") == "bridge"
+            and network.attrs.get("Internal") is False
+            and network.attrs.get("EnableIPv6") is False
+            and result["bridge"] is not None
         )
         return result
 
@@ -1902,9 +1989,9 @@ with path.open('w') as output:
 
         Docker refuses to remove a network with active endpoints, so
         every verified endpoint is disconnected first and the
-        Browser/Stream containers are reconnected to the recreated
-        network afterwards: their IDs, pages, IPC/X11 and Profile data
-        are untouched (t026 AC-004). An unknown endpoint aborts the
+        Browser is reconnected afterwards, preserving pages and Profile
+        data. Stream must be stopped first so it can't reconnect without
+        its new egress ACL. An unknown endpoint aborts the
         rebuild before anything is detached. The Gateway is not
         reconnected here — the caller re-attaches it at the new plan's
         fixed endpoint.
@@ -1940,6 +2027,8 @@ with path.open('w') as output:
                     f"Unknown endpoint container {container.name} "
                     f"({container_id}) in network {net_name}"
                 )
+            if labels.get("com.cbrowser.role") == "stream":
+                raise DockerSandboxError("Cannot rebuild the media bridge while Stream is attached")
             endpoints.append(container)
         for container in endpoints:
             try:
@@ -1960,6 +2049,7 @@ with path.open('w') as output:
             raise DockerSandboxError(
                 f"Failed to remove network {net_name}: {docker_error_detail(e)}"
             ) from e
+        self._retire_media_acl(net)
         new_net = self._ensure_media_network(profile_id)
         for container in endpoints:
             if (container.labels or {}).get("com.cbrowser.role") == "gateway":
@@ -2400,10 +2490,6 @@ with path.open('w') as output:
             profile_id, selkies_tokens_path
         )
 
-        # t097: the Stream has no Policy Agent, no startup gate and no
-        # installed rule set. Its isolation is the internal media
-        # network itself; the container starts on the stream image's
-        # own entrypoint as soon as Docker creates it.
         mounts = stream_volumes(
             planner=self.mount_planner,
             x11_socket=x11_socket,
@@ -2463,6 +2549,30 @@ with path.open('w') as output:
         ports = stream_ports(udp_mux_port)
 
         try:
+            media = await asyncio.to_thread(self.inspect_media_network, profile_id)
+            plan = media["plan"]
+            if (
+                not media["conforms"]
+                or plan is None
+                or endpoint.host != plan.gateway_endpoint
+            ):
+                raise DockerSandboxError(
+                    "Stream requires a conformant media bridge and fixed Gateway endpoint"
+                )
+            if media["gateway_ip"] != plan.gateway_endpoint:
+                raise DockerSandboxError("Gateway is not attached to the media bridge")
+            stream_ip = plan.stream_endpoint
+            if stream_ip in media["endpoints"].values():
+                raise DockerSandboxError("Stream endpoint is already in use")
+            await asyncio.to_thread(
+                self._media_acl,
+                "apply",
+                media["bridge"],
+                stream_ip,
+                plan.gateway_endpoint,
+                str(gateway_port),
+                str(udp_mux_port),
+            )
             container = await asyncio.to_thread(
                 self.client.containers.run,
                 self.stream_image,
@@ -2475,6 +2585,11 @@ with path.open('w') as output:
                 hostname=browser_hostname,
                 ipc_mode=f"container:{browser_container_name}",
                 network=net_name,
+                networking_config={
+                    net_name: self.client.api.create_endpoint_config(ipv4_address=stream_ip)
+                },
+                dns=["127.0.0.1"],
+                sysctls=STREAM_SYSCTLS,
                 ports=ports,
                 restart_policy={"Name": "no"},
                 tmpfs={"/tmp": "rw,exec,nosuid,nodev,size=256m"},
@@ -2490,11 +2605,8 @@ with path.open('w') as output:
             )
             return container
         except Exception as exc:  # noqa: BLE001 - creation failure is owned by the creator
-            # t097: creation is the last step of Stream startup — the
-            # post-creation policy installation whose failures the old
-            # reclaim path served no longer exists. A container the
-            # daemon created despite a failed call is removed by name
-            # at the next start (cleanup_container_by_name above).
+            # The ACL remains until the bridge is removed. If a Docker call
+            # times out after creating Stream, the extant container stays fenced.
             if isinstance(exc, DockerSandboxError):
                 raise
             if isinstance(exc, DockerException):
@@ -2579,6 +2691,7 @@ with path.open('w') as output:
                         f"Failed to disconnect endpoint {c.name} from {name}: {docker_error_detail(e)}"
                     ) from e
             net.remove()
+            self._retire_media_acl(net)
             logger.info(f"Removed network {name}")
         except NotFound:
             pass

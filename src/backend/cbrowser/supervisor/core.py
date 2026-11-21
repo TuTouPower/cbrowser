@@ -851,9 +851,8 @@ class SupervisorCore:
                 last_error_at=self._now_iso(),
             )
             return
-        # t097: there is no Stream policy to verify, repair or take
-        # over — Stream isolation is the internal media topology,
-        # whose conformance was checked above via the media plan.
+        # Stream egress is installed at the media bridge before startup.
+        # Only the Browser has a per-sandbox Policy Agent.
         browser_spec = await asyncio.to_thread(
             self.docker.browser_policy_spec, profile_id, browser_c
         )
@@ -1257,9 +1256,8 @@ class SupervisorCore:
             diagnostics.append("gateway_not_attached_at_fixed_endpoint")
         if roles and roles.get("browser") is not None and session is not None:
             try:
-                # t097: readiness policy covers the Browser only; the
-                # Stream has no policy — its isolation is the media
-                # topology checked via `attach` above.
+                # This check is for the Browser Policy Agent. Stream uses
+                # the bridge ACL installed at creation or Supervisor startup.
                 browser_spec = await asyncio.to_thread(
                     self.docker.browser_policy_spec, profile_id, roles["browser"]
                 )
@@ -1711,7 +1709,9 @@ class SupervisorCore:
                     )
                 await self.stop_profile(pid)
             else:
-                if not all(item.get("policy_ready") is True for item in (b_c, s_c)):
+                # The per-container gate protects Browser. Stream is
+                # guarded by the media bridge ACL before startup or adoption.
+                if b_c.get("policy_ready") is not True:
                     first_seen = self._unprotected_since.setdefault(
                         pid, time.monotonic()
                     )

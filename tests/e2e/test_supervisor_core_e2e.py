@@ -119,6 +119,7 @@ async def main() -> None:
         docker_client=d_client,
         browser_image=os.environ["CB_BROWSER_IMAGE"],
         stream_image=os.environ["CB_STREAM_IMAGE"],
+        policy_image=os.environ["CB_POLICY_IMAGE"],
         resource_prefix=prefix,
         geoip_cache_dir=data_root / "engine-cache" / "geoip",
         manage_ownership=True,
@@ -332,6 +333,7 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
     udp_base = free_udp_port_span(2)
 
     try:
+        await gateway.attach_docker_relay(d_client, prefix)
         # 1. Create Profile A and Profile B in real API
         resp_a = await api_client.post(
             "/api/v1/profiles", json={"name": "Profile Real A", "geoip": True}
@@ -407,6 +409,7 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
                 "CB_CFG_B": json.dumps(snap_b.json()["config"]),
                 "CB_BROWSER_IMAGE": browser_image,
                 "CB_STREAM_IMAGE": stream_image,
+                "CB_POLICY_IMAGE": supervisor_image,
                 "CB_UDP_BASE": str(udp_base),
             },
         )

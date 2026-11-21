@@ -37,7 +37,7 @@ no_proxy_hosts="${no_proxy:-${NO_PROXY:-}}"
 for service in api gateway supervisor browser stream caddy; do
     extra=()
     case "$service" in
-        browser|stream|caddy) extra+=(--build-arg "APT_MIRROR=$apt_mirror") ;;
+        browser|stream|caddy|supervisor) extra+=(--build-arg "APT_MIRROR=$apt_mirror") ;;
     esac
     if [ "$service" = browser ]; then
         extra+=(--build-context "font_assets=$font_context")

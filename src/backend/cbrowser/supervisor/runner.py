@@ -187,6 +187,7 @@ async def run_supervisor(
     try:
         # main() holds CoordinatorLock before reaching this startup-only reap.
         await docker_adapter.cleanup_orphan_helpers()
+        await asyncio.to_thread(docker_adapter.restore_running_media_acls, core.gateway_port)
         await serve_supervisor(core, host, port)
     finally:
         await event_forwarder.close()
