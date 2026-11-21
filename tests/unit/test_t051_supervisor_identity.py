@@ -282,7 +282,7 @@ class _BlockingNetworks:
     def list(self):
         return list(self.by_name.values())
 
-    def create(self, name: str, driver=None, ipam=None, labels=None):
+    def create(self, name: str, driver=None, ipam=None, labels=None, internal=None):
         self.create_calls += 1
         if "slow" in name:
             self.block.wait(timeout=30)
@@ -297,7 +297,11 @@ class _BlockingNetworks:
                 )
         network = SimpleNamespace(
             name=name,
-            attrs={"Labels": labels or {}, "IPAM": {"Config": config}},
+            attrs={
+                "Labels": labels or {},
+                "IPAM": {"Config": config},
+                "Internal": bool(internal),
+            },
         )
         self.by_name[name] = network
         self.created.append(name)

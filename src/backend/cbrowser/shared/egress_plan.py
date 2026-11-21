@@ -124,7 +124,6 @@ class ProfileEgressPlan:
                 if (self.proxy_enforced and self.needs_proxy_dns)
                 else []
             ),
-            "udp_mux_port": None,
             "proxy_enforced": self.proxy_enforced,
         }
 

@@ -1,0 +1,19 @@
+{
+  "tid": "t097",
+  "attempt": 1,
+  "execution_id": "a03f05bd28ba4de5b50dfbb8d6bfbae3",
+  "status": "done",
+  "branch": "t097_browser_only_policy_agent",
+  "base_sha": "4e007a694f1b5d3ada39ee29caa687df8198727f",
+  "spec_source_sha": "4e007a694f1b5d3ada39ee29caa687df8198727f",
+  "tests": "门禁第三轮 gate-t097-final3b——protocol/requirements/design×2/contract/frontend_build/frontend_test exit 0；unit 2408 passed、5 failed + 10 errors 与云端基线集逐条一致；integration 224 passed、7 errors 为子进程就绪 flake（单跑 7/7 过）",
+  "blackbox": "云端无 Docker/真实引擎，真机黑盒验证延期本地（p159/p160/p161）",
+  "review": "full 两轮，轮 2 code/test 均 PASS、零未处置 finding（轮 1 三条 minor 全部已修并经轮 2 复核消除）",
+  "review_scope": "ab758f8a9865fd29",
+  "pending": [
+    "p159",
+    "p160",
+    "p161"
+  ],
+  "findings": []
+}

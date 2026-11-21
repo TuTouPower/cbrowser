@@ -27,12 +27,17 @@ NET_NAME = f"{PREFIX}-net-{PROFILE}"
 
 
 class _FakeNetwork:
-    def __init__(self, name: str, labels: dict, ipam_config: list) -> None:
+    def __init__(
+        self, name: str, labels: dict, ipam_config: list, internal: bool = True
+    ) -> None:
         self.name = name
         self.attrs = {
             "Labels": labels,
             "IPAM": {"Config": ipam_config},
             "Containers": {},
+            # t097: the managed media topology is internal; the fake
+            # models the current shape unless a test says otherwise.
+            "Internal": internal,
         }
 
     def reload(self) -> None:
@@ -66,7 +71,9 @@ class _FakeNetworks:
     def list(self) -> list[_FakeNetwork]:
         return list(self.by_name.values())
 
-    def create(self, name: str, driver=None, ipam=None, labels=None) -> _FakeNetwork:
+    def create(
+        self, name: str, driver=None, ipam=None, labels=None, internal=None
+    ) -> _FakeNetwork:
         config = []
         if ipam is not None:
             for pool_config in ipam.get("Config") or []:
@@ -76,9 +83,13 @@ class _FakeNetworks:
                         "IPRange": pool_config.get("IPRange"),
                     }
                 )
-        network = _FakeNetwork(name, labels or {}, config)
+        network = _FakeNetwork(
+            name, labels or {}, config, internal=bool(internal)
+        )
         self.by_name[name] = network
-        self.created.append({"name": name, "ipam": ipam, "labels": labels})
+        self.created.append(
+            {"name": name, "ipam": ipam, "labels": labels, "internal": internal}
+        )
         return network
 
 
@@ -142,6 +153,9 @@ async def test_create_allocates_explicit_subnet_range_and_labels(tmp_path):
     assert pool["IPRange"] == "10.251.0.0/25"
     assert created["labels"]["com.cbrowser.media-spec"] == "fixed-endpoint-v1"
     assert created["labels"]["com.cbrowser.gateway-endpoint"] == "10.251.0.254"
+    # t097: the media topology is internal — Stream egress isolation
+    # is a property of the network itself.
+    assert created["internal"] is True
     assert network.name == NET_NAME
 
     inspection = adapter.inspect_media_network(PROFILE)
@@ -163,6 +177,29 @@ async def test_pre_spec_network_is_not_conforming(tmp_path):
     assert inspection["exists"] is True
     assert inspection["conforms"] is False
     assert inspection["plan"] is None
+
+
+@pytest.mark.asyncio
+async def test_routable_network_is_not_conforming(tmp_path):
+    # t097: a pre-t097 media network with the full fixed-endpoint
+    # plan but a routable (non-internal) topology does not conform —
+    # reconcile rebuilds it into the internal shape.
+    plan = plan_for_subnet(ipaddress.ip_network("10.251.0.0/24"))
+    client = _client()
+    client.networks.by_name[NET_NAME] = _FakeNetwork(
+        NET_NAME,
+        media_network_labels(
+            network_labels(PREFIX, PROFILE, deployment_id="dep-t026"), plan
+        ),
+        [{"Subnet": "10.251.0.0/24", "IPRange": "10.251.0.0/25"}],
+        internal=False,
+    )
+    adapter = _adapter(tmp_path, client)
+
+    inspection = adapter.inspect_media_network(PROFILE)
+    assert inspection["exists"] is True
+    assert inspection["plan"] is not None
+    assert inspection["conforms"] is False
 
 
 @pytest.mark.asyncio

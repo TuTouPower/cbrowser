@@ -27,8 +27,7 @@ import logging
 import subprocess
 from typing import Any, Literal
 
-from cbrowser.udp_mux import udp_mux_bounds
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 logger = logging.getLogger("cbrowser.supervisor.network_policy")
 
@@ -63,9 +62,6 @@ BLOCKED_IPV6_RANGES = [
     ipaddress.ip_network("::ffff:0:0/96"),  # IPv4-mapped IPv6
 ]
 
-# Valid UDP mux port range for Selkies / Stream
-UDP_MUX_MIN, UDP_MUX_MAX = udp_mux_bounds()
-
 def _validate_ip_port(v: tuple[str, int]) -> tuple[str, int]:
     if not (isinstance(v, (tuple, list)) and len(v) == 2):
         raise ValueError("Endpoint must be a tuple of (IP literal, port)")
@@ -82,14 +78,17 @@ def _validate_ip_port(v: tuple[str, int]) -> tuple[str, int]:
 
 
 class NetworkPolicySpec(BaseModel):
-    """Specification of network filtering policy for a container sandbox."""
+    """Specification of network filtering policy for a container sandbox.
+
+    Browser-only since t097: the Stream has no installed policy — its
+    isolation is a property of the internal media network topology.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    role: Literal["browser", "stream"]
+    role: Literal["browser"]
     allowed_tcp: list[tuple[str, int]] = Field(default_factory=list)
     allowed_udp: list[tuple[str, int]] = Field(default_factory=list)
-    udp_mux_port: int | None = Field(default=None, ge=UDP_MUX_MIN, le=UDP_MUX_MAX)
     proxy_enforced: bool = False
 
     @field_validator("allowed_tcp", "allowed_udp", mode="before")
@@ -105,40 +104,15 @@ class NetworkPolicySpec(BaseModel):
                 raise ValueError(f"Invalid endpoint format: {item}")  # noqa: TRY004
         return validated
 
-    @model_validator(mode="after")
-    def validate_role_mux_port(self) -> NetworkPolicySpec:
-        if self.role == "stream" and self.udp_mux_port is None:
-            raise ValueError(
-                "udp_mux_port is required for stream role "
-                f"({UDP_MUX_MIN}..{UDP_MUX_MAX})"
-            )
-        if self.role == "browser" and self.udp_mux_port is not None:
-            raise ValueError("udp_mux_port must not be specified for browser role")
-        return self
-
 
 def _render_output_tail(spec: NetworkPolicySpec, version: int) -> list[str]:
-    if version == 4:
-        blocked = BLOCKED_IPV4_RANGES
-        # Link-local only (t054): LAN ranges are never reachable from a
-        # stream; the LAN media allowance is deleted, not defaulted off.
-        media_local = [ipaddress.ip_network("169.254.0.0/16")]
-    else:
-        blocked = BLOCKED_IPV6_RANGES
-        media_local = [ipaddress.ip_network("fe80::/10")]
+    blocked = BLOCKED_IPV4_RANGES if version == 4 else BLOCKED_IPV6_RANGES
 
     lines: list[str] = []
-    if spec.role == "stream":
-        assert spec.udp_mux_port is not None
-        for net in media_local:
-            lines.append(
-                f"-A OUTPUT -p udp --sport {spec.udp_mux_port} -d {net} -j ACCEPT"
-            )
-
     for net in blocked:
         lines.append(f"-A OUTPUT -d {net} -j DROP")
 
-    if spec.role == "browser" and not spec.proxy_enforced:
+    if not spec.proxy_enforced:
         lines.append("-A OUTPUT -j ACCEPT")
     else:
         lines.append("-A OUTPUT -j DROP")
@@ -159,11 +133,6 @@ def render_iptables_rules(spec: NetworkPolicySpec) -> str:
         "-A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
         "-A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
     ]
-
-    # Role-specific INPUT rules
-    if spec.role == "stream":
-        assert spec.udp_mux_port is not None
-        lines.append(f"-A INPUT -p udp --dport {spec.udp_mux_port} -j ACCEPT")
 
     # OUTPUT rules: explicitly allowed endpoints
     for ip_str, port in spec.allowed_tcp:
@@ -202,11 +171,6 @@ def render_ip6tables_rules(spec: NetworkPolicySpec) -> str:
         "-A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
         "-A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
     ]
-
-    # Role-specific INPUT rules
-    if spec.role == "stream":
-        assert spec.udp_mux_port is not None
-        lines.append(f"-A INPUT -p udp --dport {spec.udp_mux_port} -j ACCEPT")
 
     # OUTPUT rules for allowed IPv6 endpoints
     for ip_str, port in spec.allowed_tcp:

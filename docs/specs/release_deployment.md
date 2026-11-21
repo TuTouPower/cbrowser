@@ -1,7 +1,7 @@
 ---
 slug: release_deployment
 status: active
-tasks: [baseline, t075, t080]
+tasks: [baseline, t075, t080, t097]
 ---
 # 需求规范：Release 发布与回退
 
@@ -22,6 +22,8 @@ tasks: [baseline, t075, t080]
 ## 幂等与最小重建
 
 - 连续以相同配置发布是幂等的收敛操作：脚本从不显式重启任何服务；Caddy 的重建只由其环境中的 Caddyfile/前端产物指纹变化触发，配置未变时 Caddy 不重启，配置变化时只重建受影响服务。
+
+- 资源形状收敛（t097）：从仍有两类 Policy Agent 的 release 升级后，Supervisor 启动收敛一次性替换存量旧形状资源——Stream Agent 删除、旧名 Browser Agent 换为 `<prefix>-<NNNN>-policy-agent` 现行形状、非 internal 媒体网络经 Stream-only 重建收敛；运行意愿与 Profile 数据保留，无旧 Agent 残留。真实升级/回退验证属部署验收（t097 AC-005，本地补验 p161）。
 
 ## 回退约束
 
