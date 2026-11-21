@@ -291,6 +291,7 @@ def cache_init_environment(
     run_id: str,
     *,
     engine_build: str | None = None,
+    download_proxy: str = "",
 ) -> dict[str, str]:
     artifact = get_approved_artifact(engine_build=engine_build)
     env = {
@@ -305,6 +306,8 @@ def cache_init_environment(
     }
     if artifact.binary_sha256:
         env["CBROWSER_ENGINE_BINARY_SHA256"] = artifact.binary_sha256
+    if proxy := download_proxy.strip():
+        env.update(HTTP_PROXY=proxy, HTTPS_PROXY=proxy)
     return env
 
 
