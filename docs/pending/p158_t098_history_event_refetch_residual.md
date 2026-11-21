@@ -1,10 +1,13 @@
 ---
 pid: "p158"
 slug: "t098_history_event_refetch_residual"
-status: "todo"
+status: "closed"
+resolution: "transferred"
+reason: "2026-11-21 核实：t098 review_code f003/f004 两条 minor 前端残余仍成立，立 t101 立项根治（统一水位见证 + 抑制下跨界行不写回），转办后由 t101 表达修复状态。"
+fix_ref: "t101"
 ---
 # p158 t098 遗留 minor：历史事件多余重取与跨界写回残余
 
 - 来源：t098 遗留（review_code Round 2 的 t098_code_f003 / t098_code_f004，两轮审阅均定级 minor、不阻断 PASS）
 - 内容：前端事件同步的两个有界残余——(1) 历史事件抑制只以 per-profile runtime 缓存为见证，列表常驻会话该缓存通常为空时抑制不生效；同 revision 重复事件在非成员分支仍可触发集合页重取，alerts 无见证时同理。多余重取后仍为服务端真相，无状态倒退。(2) 抑制失效时成员行跨越筛选边界被就地写回筛选页，单行与总数在下一次无关重取前不收敛。彻底修法是给事件同步加 per-profile「已见最高 revision」台账作为统一见证，并让跨界行在抑制模式下走本地移除＋总数保守处理；两轮审阅均判影响有界、非正确性阻断，故不在 t098 内继续扩围。
-- 处理：未开
+- 处理：t101；resolution=transferred；reason=2026-11-21 核实：t098 review_code f003/f004 两条 minor 前端残余仍成立，立 t101 立项根治（统一水位见证 + 抑制下跨界行不写回），转办后由 t101 表达修复状态。
