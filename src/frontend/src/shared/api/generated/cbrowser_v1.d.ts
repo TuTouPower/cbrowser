@@ -67,6 +67,10 @@ export interface paths {
          * List Profiles Collection
          * @description t076 AC-001: bounded server-side profile page (search/filter/sort
          *     run against the full set; page_size is clamped to 1..100).
+         *
+         *     t098: every row carries its runtime projection, resolved for the
+         *     page's ids only. The coordinator error is filled in here, bounded
+         *     by the page — it lives in coordinator memory, not the DB row.
          */
         get: operations["list_profiles_collection_api_v1_profiles_collection_get"];
         put?: never;
@@ -97,7 +101,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/profiles/runtime-summary": {
+    "/api/v1/profiles/runtime-alerts": {
         parameters: {
             query?: never;
             header?: never;
@@ -105,13 +109,13 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Runtime Summary
-         * @description t076 AC-002: one batched read of every profile's runtime state.
-         *
-         *     List pages consume this single payload instead of issuing one
-         *     runtime HTTP request per profile.
+         * Get Runtime Alerts
+         * @description t098: compact read model for the global coordinator-error
+         *     banner — only profiles with a live coordinator error are listed.
+         *     Row runtime state itself travels with the bounded collection
+         *     (t098); the former all-profiles runtime summary is gone.
          */
-        get: operations["get_runtime_summary_api_v1_profiles_runtime_summary_get"];
+        get: operations["get_runtime_alerts_api_v1_profiles_runtime_alerts_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1153,10 +1157,10 @@ export interface components {
              */
             page_size: number;
         };
-        /** CollectionPage[ProfileResponse] */
-        CollectionPage_ProfileResponse_: {
+        /** CollectionPage[ProfileCollectionItem] */
+        CollectionPage_ProfileCollectionItem_: {
             /** Items */
-            items?: components["schemas"]["ProfileResponse"][];
+            items?: components["schemas"]["ProfileCollectionItem"][];
             /**
              * Total
              * @default 0
@@ -1244,6 +1248,17 @@ export interface components {
             agent_instance_id?: string | null;
             /** Agent Session Id */
             agent_session_id?: string | null;
+        };
+        /**
+         * CoordinatorErrorEntry
+         * @description One profile with a live coordinator error (t098 compact read
+         *     model for the global banner: only errored profiles are listed).
+         */
+        CoordinatorErrorEntry: {
+            /** Profile Id */
+            profile_id: string;
+            /** Last Coordinator Error */
+            last_coordinator_error: string;
         };
         /**
          * ErrorResponse
@@ -1432,6 +1447,140 @@ export interface components {
             profile_ids: string[];
             /** Group Id */
             group_id?: string | null;
+        };
+        /**
+         * ProfileCollectionItem
+         * @description One row of the bounded profile collection (t098): the config
+         *     row plus its runtime projection. ``runtime`` is required but
+         *     nullable — ``None`` means the server holds no runtime fact for the
+         *     row, and consumers must present an explicit unknown instead of
+         *     filling in a guessed state.
+         */
+        ProfileCollectionItem: {
+            /** Id */
+            id: string;
+            /** Display Number */
+            display_number: number;
+            /** Name */
+            name: string;
+            /** Fingerprint Seed */
+            fingerprint_seed: number;
+            /** Group Id */
+            group_id?: string | null;
+            /** Proxy Id */
+            proxy_id?: string | null;
+            /** Group Name */
+            group_name?: string | null;
+            /** Group Color */
+            group_color?: ("slate" | "blue" | "teal" | "green" | "amber" | "orange" | "red" | "violet") | null;
+            /** Proxy Name */
+            proxy_name?: string | null;
+            /** Timezone */
+            timezone?: string | null;
+            /** Locale */
+            locale?: ("zh-CN" | "en-US") | null;
+            /**
+             * Screen Width
+             * @default 1920
+             */
+            screen_width: number;
+            /**
+             * Screen Height
+             * @default 1080
+             */
+            screen_height: number;
+            /**
+             * Humanize
+             * @default true
+             */
+            humanize: boolean;
+            /**
+             * Human Preset
+             * @default default
+             */
+            human_preset: string;
+            /**
+             * Geoip
+             * @default true
+             */
+            geoip: boolean;
+            /**
+             * Clipboard Sync
+             * @default true
+             */
+            clipboard_sync: boolean;
+            /**
+             * Auto Launch
+             * @default false
+             */
+            auto_launch: boolean;
+            /**
+             * Color Scheme
+             * @default light
+             */
+            color_scheme: string;
+            /** Fingerprint Platform */
+            fingerprint_platform?: string;
+            /** Font Set Id */
+            font_set_id?: string | null;
+            /**
+             * Include Cjk Fonts
+             * @default true
+             */
+            include_cjk_fonts: boolean;
+            /** Launch Args */
+            launch_args?: string[];
+            /** Extension Paths */
+            extension_paths?: string[];
+            /**
+             * Allow 3P Cookies
+             * @default true
+             */
+            allow_3p_cookies: boolean;
+            /**
+             * Set Google Default
+             * @default true
+             */
+            set_google_default: boolean;
+            /**
+             * Capture Preview
+             * @default true
+             */
+            capture_preview: boolean;
+            /**
+             * Restore Session
+             * @default true
+             */
+            restore_session: boolean;
+            /**
+             * Transparent Proxy
+             * @default false
+             */
+            transparent_proxy: boolean;
+            /**
+             * Portable Cookies
+             * @default true
+             */
+            portable_cookies: boolean;
+            /** Notes */
+            notes?: string | null;
+            /** User Data Dir */
+            user_data_dir: string;
+            /**
+             * Sort Order
+             * @default 0
+             */
+            sort_order: number;
+            /**
+             * Current Config Version
+             * @default 1
+             */
+            current_config_version: number;
+            /** Created At */
+            created_at: string;
+            /** Updated At */
+            updated_at: string;
+            runtime: components["schemas"]["ProfileRuntimeProjection"] | null;
         };
         /**
          * ProfileControlStateData
@@ -1782,6 +1931,62 @@ export interface components {
             /** Updated At */
             updated_at: string;
         };
+        /**
+         * ProfileRuntimeProjection
+         * @description One collection row's runtime state (t098): the bounded page
+         *     delivers the runtime projection alongside the config row, so list,
+         *     card, session-entry and switcher consumers read state from the
+         *     collection itself instead of a separate all-profiles summary.
+         *     ``state_revision`` is the monotonic fence shared with operation
+         *     results and SSE events.
+         */
+        ProfileRuntimeProjection: {
+            /**
+             * Desired State
+             * @enum {string}
+             */
+            desired_state: "stopped" | "running";
+            /**
+             * Observed State
+             * @enum {string}
+             */
+            observed_state: "stopped" | "starting" | "running" | "stopping" | "error";
+            /**
+             * Config Version
+             * @default 1
+             */
+            config_version: number;
+            /**
+             * State Revision
+             * @default 0
+             */
+            state_revision: number;
+            /** Runtime Instance Id */
+            runtime_instance_id?: string | null;
+            /**
+             * Failure Count
+             * @default 0
+             */
+            failure_count: number;
+            /**
+             * Restart Blocked
+             * @default false
+             */
+            restart_blocked: boolean;
+            /** Last Started At */
+            last_started_at?: string | null;
+            /** Last Stopped At */
+            last_stopped_at?: string | null;
+            /** Preview Captured At */
+            preview_captured_at?: string | null;
+            /** Last Coordinator Error */
+            last_coordinator_error?: string | null;
+            /**
+             * Updated At
+             * @default
+             */
+            updated_at: string;
+        };
         /** ProfileRuntimeResponse */
         ProfileRuntimeResponse: {
             /** Profile Id */
@@ -1802,6 +2007,11 @@ export interface components {
             runtime_instance_id: string | null;
             /** Config Version */
             config_version: number;
+            /**
+             * State Revision
+             * @default 0
+             */
+            state_revision: number;
             /** Failure Count */
             failure_count: number;
             /** Restart Blocked */
@@ -1855,6 +2065,11 @@ export interface components {
              * @default 1
              */
             config_version: number;
+            /**
+             * State Revision
+             * @default 0
+             */
+            state_revision: number;
             /**
              * Failure Count
              * @default 0
@@ -2179,6 +2394,8 @@ export interface components {
              * @enum {string}
              */
             kind: "current" | "bound" | "both";
+            /** Observed State */
+            observed_state: ("stopped" | "starting" | "running" | "stopping" | "error") | null;
         };
         /** ProxyUsedByResponse */
         ProxyUsedByResponse: {
@@ -2187,6 +2404,11 @@ export interface components {
             /** Entries */
             entries: components["schemas"]["ProxyUsedByEntry"][];
         };
+        /** RuntimeAlertsResponse */
+        RuntimeAlertsResponse: {
+            /** Entries */
+            entries: components["schemas"]["CoordinatorErrorEntry"][];
+        };
         /** RuntimeDesiredStateRequest */
         RuntimeDesiredStateRequest: {
             /**
@@ -2194,67 +2416,6 @@ export interface components {
              * @enum {string}
              */
             desired_state: "stopped" | "running";
-        };
-        /**
-         * RuntimeSummaryEntry
-         * @description One profile's runtime state for the batched summary (t076 AC-002):
-         *     list pages read this single payload instead of one HTTP request
-         *     per profile.  It carries every field the list rows render, so no
-         *     per-row read is needed.
-         */
-        RuntimeSummaryEntry: {
-            /** Profile Id */
-            profile_id: string;
-            /**
-             * Desired State
-             * @enum {string}
-             */
-            desired_state: "stopped" | "running";
-            /**
-             * Observed State
-             * @enum {string}
-             */
-            observed_state: "stopped" | "starting" | "running" | "stopping" | "error";
-            /**
-             * Config Version
-             * @default 1
-             */
-            config_version: number;
-            /** Runtime Instance Id */
-            runtime_instance_id?: string | null;
-            /**
-             * Failure Count
-             * @default 0
-             */
-            failure_count: number;
-            /**
-             * Restart Blocked
-             * @default false
-             */
-            restart_blocked: boolean;
-            /** Last Started At */
-            last_started_at?: string | null;
-            /** Last Stopped At */
-            last_stopped_at?: string | null;
-            /** Preview Captured At */
-            preview_captured_at?: string | null;
-            /** Last Coordinator Error */
-            last_coordinator_error?: string | null;
-            /**
-             * Updated At
-             * @default
-             */
-            updated_at: string;
-        };
-        /** RuntimeSummaryResponse */
-        RuntimeSummaryResponse: {
-            /** Entries */
-            entries: components["schemas"]["RuntimeSummaryEntry"][];
-            /**
-             * Running Count
-             * @default 0
-             */
-            running_count: number;
         };
         /**
          * SearchDefaultsStatusData
@@ -2655,7 +2816,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CollectionPage_ProfileResponse_"];
+                    "application/json": components["schemas"]["CollectionPage_ProfileCollectionItem_"];
                 };
             };
             /** @description Authentication required */
@@ -2755,7 +2916,7 @@ export interface operations {
             };
         };
     };
-    get_runtime_summary_api_v1_profiles_runtime_summary_get: {
+    get_runtime_alerts_api_v1_profiles_runtime_alerts_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -2770,7 +2931,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RuntimeSummaryResponse"];
+                    "application/json": components["schemas"]["RuntimeAlertsResponse"];
                 };
             };
             /** @description Authentication required */

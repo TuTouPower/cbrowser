@@ -195,6 +195,7 @@ function runtime(
     desired_state: observed === "running" ? "running" : "stopped",
     runtime_instance_id: "inst-1",
     config_version: 1,
+    state_revision: 1,
     last_started_at: "2026-01-01T00:00:00Z",
     last_stopped_at: null,
     browser_product: "Chrome/146",

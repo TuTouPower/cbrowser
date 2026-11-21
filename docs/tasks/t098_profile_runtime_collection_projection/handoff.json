@@ -1,0 +1,17 @@
+{
+  "tid": "t098",
+  "attempt": 1,
+  "execution_id": "4785210eb215495982141b841d6a6c0d",
+  "status": "done",
+  "branch": "t098_profile_runtime_collection_projection",
+  "base_sha": "50df4f1a55393aae417a9ccae6116478c0e927ec",
+  "spec_source_sha": "50df4f1a55393aae417a9ccae6116478c0e927ec",
+  "tests": "全量门禁两轮完整执行（证据 gate-t098-final3 / gate-t098-final4）＋修复后定向复验；unit 失败集与基线 50df4f1 逐条一致（云端环境基线），integration 与 frontend_test 的零星失败均逐条单跑复核为负载 flake，详见实施笔记各条",
+  "blackbox": "不适用（云端无 Docker，CBROWSER_RUN_E2E 未启用；本 task 无 [deploy] AC）",
+  "review": "full 两轮——Round 1 code PASS / test FAIL（已修复），Round 2 code PASS / test PASS，四条 AC 全部 TICK-VALID",
+  "review_scope": "0e7db4e696bf7703",
+  "pending": [
+    "p158"
+  ],
+  "findings": []
+}

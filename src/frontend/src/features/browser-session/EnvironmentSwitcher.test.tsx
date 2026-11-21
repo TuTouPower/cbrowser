@@ -10,7 +10,7 @@ import { type ApiClient } from "../../shared/api/client";
 import { ApiClientContext } from "../../shared/api/client_context";
 import type {
   GroupResponse,
-  ProfileResponse,
+  ProfileCollectionItem,
   ProfileRuntimeResponse,
 } from "../../shared/api/types";
 import {
@@ -64,7 +64,9 @@ beforeAll(() => {
   }
 });
 
-function profile(overrides: Partial<ProfileResponse> = {}): ProfileResponse {
+function profile(
+  overrides: Partial<ProfileCollectionItem> = {},
+): ProfileCollectionItem {
   return {
     id: "p1",
     name: "Alpha",
@@ -99,6 +101,7 @@ function profile(overrides: Partial<ProfileResponse> = {}): ProfileResponse {
     current_config_version: 1,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
+    runtime: null,
     ...overrides,
   };
 }
@@ -126,6 +129,7 @@ function runtime(
     observed_state: observed,
     runtime_instance_id: "inst-1",
     config_version: 1,
+    state_revision: 1,
     failure_count: 0,
     restart_blocked: false,
     last_exit_event_id: null,
@@ -145,19 +149,6 @@ function makeStub(
       getRuntime: vi.fn(
         async (id: string) => runtimes[id] ?? runtime(id, "stopped"),
       ),
-      getRuntimeSummary: vi.fn(async () => ({
-        entries: Object.values(runtimes).map((r) => ({
-          profile_id: r.profile_id,
-          desired_state: r.desired_state,
-          observed_state: r.observed_state,
-          config_version: r.config_version,
-          runtime_instance_id: r.runtime_instance_id,
-          last_coordinator_error: r.last_coordinator_error ?? null,
-        })),
-        running_count: Object.values(runtimes).filter(
-          (r) => r.observed_state === "running",
-        ).length,
-      })),
     },
   } as unknown as ApiClient;
 }
@@ -324,10 +315,69 @@ describe("EnvironmentSwitcher", () => {
     ).not.toContain("bg-accent");
   });
 
-  // t076 AC-002 (p121): a closed switcher must not fan out runtime
-  // reads: only the current profile is read (trigger dot); the batched
-  // summary is fetched only once the popover opens.
-  it("关闭时不为全部环境拉取 runtime，打开后只读一次批量摘要", async () => {
+  // t098 test review f003: non-current items show the state carried
+  // by their own collection row — a running projection renders the
+  // success dot and the running aria label without any runtime read
+  // for that profile.
+  it("打开后非当前环境按其行投影显示真实状态点", async () => {
+    const projection = (
+      observed: "running" | "stopped",
+    ): NonNullable<ProfileCollectionItem["runtime"]> => ({
+      desired_state: observed,
+      observed_state: observed,
+      config_version: 1,
+      state_revision: 1,
+      runtime_instance_id: "inst-x",
+      failure_count: 0,
+      restart_blocked: false,
+      last_started_at: null,
+      last_stopped_at: null,
+      preview_captured_at: null,
+      last_coordinator_error: null,
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    const props = fixture();
+    props.profiles = [
+      profile({ id: "p1", name: "Alpha", group_id: "g1" }),
+      profile({
+        id: "p2",
+        name: "Beta",
+        group_id: "g1",
+        runtime: projection("running"),
+      }),
+      profile({
+        id: "p3",
+        name: "Gamma",
+        group_id: null,
+        runtime: projection("stopped"),
+      }),
+    ];
+    const client = makeStub({ p1: runtime("p1", "stopped") });
+    renderSwitcher(props, client);
+
+    fireEvent.click(screen.getByTestId(SESS_SWITCHER_TRIGGER));
+    await screen.findByTestId(SESS_SWITCHER_SEARCH);
+
+    expect(screen.getByTestId(sessId("switcher-dot", "p2")).className).toContain(
+      "bg-success",
+    );
+    expect(
+      screen.getByTestId(sessId("switcher-item", "p2")),
+    ).toHaveAttribute("aria-label", `Beta (${en.statusRunning})`);
+    expect(screen.getByTestId(sessId("switcher-dot", "p3")).className).not.toContain(
+      "bg-success",
+    );
+    // The non-current states came from the rows: still only the
+    // current profile was ever read individually.
+    expect(vi.mocked(client.profiles.getRuntime)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(client.profiles.getRuntime)).toHaveBeenCalledWith("p1");
+  });
+
+  // t098 (ex-t076 AC-002, p121): a closed switcher must not fan out
+  // runtime reads: only the current profile is read (trigger dot).
+  // Item states travel with the collection rows themselves, so
+  // opening the popover issues no further runtime reads at all.
+  it("关闭时不为全部环境拉取 runtime，打开后也不再发批量读取", async () => {
     const props = fixture();
     const client = makeStub({ p1: runtime("p1", "running") });
     renderSwitcher(props, client);
@@ -337,15 +387,13 @@ describe("EnvironmentSwitcher", () => {
       ).toContain("bg-success"),
     );
     expect(vi.mocked(client.profiles.getRuntime)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(client.profiles.getRuntimeSummary)).not.toHaveBeenCalled();
+    expect(vi.mocked(client.profiles.getRuntime)).toHaveBeenCalledWith("p1");
 
     fireEvent.click(screen.getByTestId(SESS_SWITCHER_TRIGGER));
     await screen.findByTestId(SESS_SWITCHER_SEARCH);
-    await waitFor(() =>
-      expect(
-        vi.mocked(client.profiles.getRuntimeSummary),
-      ).toHaveBeenCalledTimes(1),
-    );
+    // Still exactly one runtime read after opening: the item states
+    // came from the rows, not from any additional fetch.
     expect(vi.mocked(client.profiles.getRuntime)).toHaveBeenCalledTimes(1);
   });
+
 });

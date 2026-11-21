@@ -399,6 +399,12 @@ class RuntimeCoordinator:
             and runtime_version >= error.config_version
         )
 
+    def last_error_profile_ids(self) -> list[str]:
+        """Profile ids with a stored coordinator error (t098): the
+        compact alerts read model starts from this small candidate
+        set instead of scanning every profile's runtime."""
+        return sorted(self._last_errors)
+
     def get_last_error(
         self, profile_id: str, runtime: Any = None
     ) -> str | None:
@@ -1096,6 +1102,7 @@ class RuntimeCoordinator:
                 observed_state=rt.observed_state,
                 runtime_instance_id=rt.runtime_instance_id,
                 config_version=rt.config_version,
+                state_revision=rt.state_revision,
                 failure_count=rt.failure_count,
                 restart_blocked=rt.restart_blocked,
                 last_started_at=rt.last_started_at,

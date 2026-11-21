@@ -74,6 +74,7 @@ async def make_runtime_response(
         observed_state=rt.observed_state,
         runtime_instance_id=rt.runtime_instance_id,
         config_version=rt.config_version,
+        state_revision=rt.state_revision,
         failure_count=rt.failure_count,
         restart_blocked=rt.restart_blocked,
         last_exit_event_id=rt.last_exit_event_id,

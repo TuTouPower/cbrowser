@@ -1,24 +1,19 @@
-import { useRuntimeSummaryQuery } from "../features/profiles/useProfilesQuery";
+import { useRuntimeAlertsQuery } from "../features/profiles/useProfilesQuery";
 import type { ApiClient } from "../shared/api/client";
 
 export interface RuntimeSnapshot {
-  runningCount: number;
   coordinatorError: string | null;
 }
 
-/** t076 AC-002: the global snapshot reads one batched summary payload
- * instead of issuing one runtime HTTP request per profile. */
+/** t098: the global banner reads the compact alerts model — only
+ * profiles with a live coordinator error. (The old running count had
+ * no interface consumer and left with the all-profiles summary.) */
 export function useRuntimeSnapshot(client: ApiClient): RuntimeSnapshot {
-  const { data: summary } = useRuntimeSummaryQuery(client);
-  const entries = summary?.entries ?? [];
-  let coordinatorError: string | null = null;
-  for (const entry of entries) {
-    if (!coordinatorError && entry.last_coordinator_error) {
-      coordinatorError = entry.last_coordinator_error;
-    }
-  }
+  const { data: alerts } = useRuntimeAlertsQuery(client);
+  const first = (alerts?.entries ?? []).find(
+    (entry) => entry.last_coordinator_error,
+  );
   return {
-    runningCount: summary?.running_count ?? 0,
-    coordinatorError,
+    coordinatorError: first?.last_coordinator_error ?? null,
   };
 }

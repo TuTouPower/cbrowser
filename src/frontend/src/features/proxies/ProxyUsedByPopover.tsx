@@ -1,8 +1,6 @@
-import { useApiClient } from "../../shared/api/client_context";
 import type { ProxyUsedByEntry } from "../../shared/api/types";
 import { Popover } from "../../shared/ui";
 import { useI18n } from "../../i18n";
-import { useRuntimeSummaryQuery } from "../profiles/useProfilesQuery";
 
 function kindLabel(
   kind: ProxyUsedByEntry["kind"],
@@ -31,15 +29,10 @@ export function ProxyUsedByPopover({
   onOpenProfile: (profile: { id: string }) => void;
 }) {
   const { t } = useI18n();
-  const client = useApiClient();
-  // t076 AC-002/AC-004 (p121): running dots come from one batched
-  // summary, read only while the popover is open.
-  const { data: summary } = useRuntimeSummaryQuery(client, { enabled: open });
+  // t098: each entry's observed state travels with the used-by
+  // reference data itself — no separate runtime read for the dots.
   const observedById = new Map(
-    (summary?.entries ?? []).map((entry) => [
-      entry.profile_id,
-      entry.observed_state,
-    ]),
+    entries.map((entry) => [entry.profile_id, entry.observed_state]),
   );
 
   return (

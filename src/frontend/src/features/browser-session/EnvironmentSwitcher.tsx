@@ -5,7 +5,7 @@ import { useI18n } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";
 import type {
   GroupResponse,
-  ProfileResponse,
+  ProfileCollectionItem,
 } from "../../shared/api/types";
 import {
   Popover,
@@ -13,10 +13,7 @@ import {
   type StatusTone,
 } from "../../shared/ui";
 import { environmentStatusDescriptor } from "../../shared/presentation";
-import {
-  useProfileRuntimeQuery,
-  useRuntimeSummaryQuery,
-} from "../profiles/useProfilesQuery";
+import { useProfileRuntimeQuery } from "../profiles/useProfilesQuery";
 import {
   SESS_SWITCHER_GROUP,
   SESS_SWITCHER_ITEM,
@@ -28,14 +25,14 @@ import {
 
 export interface EnvironmentSwitcherProps {
   currentProfileId: string;
-  profiles: ProfileResponse[];
+  profiles: ProfileCollectionItem[];
   groups: GroupResponse[];
 }
 
 interface SwitcherSection {
   key: string;
   label: string;
-  items: ProfileResponse[];
+  items: ProfileCollectionItem[];
 }
 
 export function currentStatus(
@@ -72,17 +69,17 @@ export function EnvironmentSwitcher({
   const [open, setOpen] = useState(false);
 
   const current = profiles.find((profile) => profile.id === currentProfileId);
-  // t076 AC-002 (p121): a closed switcher issues no per-profile runtime
-  // requests. The trigger only needs the current profile (one read);
-  // the item list reads one batched summary, and only while open.
+  // t098: item states come from the collection rows themselves (each
+  // carries its runtime projection) — no separate summary read, open
+  // or closed. The trigger's current profile still gets its own
+  // fresher single-runtime read on top.
   const { data: currentRuntime } = useProfileRuntimeQuery(
     currentProfileId,
     client,
   );
-  const { data: summary } = useRuntimeSummaryQuery(client, { enabled: open });
   const observedById = new Map<string, string | undefined>();
-  for (const entry of summary?.entries ?? []) {
-    observedById.set(entry.profile_id, entry.observed_state);
+  for (const profile of profiles) {
+    observedById.set(profile.id, profile.runtime?.observed_state);
   }
   if (currentRuntime) {
     observedById.set(currentProfileId, currentRuntime.observed_state);

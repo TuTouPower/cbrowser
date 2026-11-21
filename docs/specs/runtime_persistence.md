@@ -1,7 +1,7 @@
 ---
 slug: runtime_persistence
 status: active
-tasks: [baseline, t076]
+tasks: [baseline, t076, t098]
 ---
 # 需求规范：运行时状态与持久化契约 (runtime_persistence)
 
@@ -102,7 +102,7 @@ tasks: [baseline, t076]
 
 - **集合页**：`GET /api/v1/profiles/collection`、`GET /api/v1/proxies/collection`、`GET /api/v1/groups/collection` 在服务端完成搜索 / 筛选 / 稳定排序 / 总数 / 有界分页（`page_size` 钳制 1..100，`total` 计全量筛选集）；有界候选 `…/candidates`（`limit` 钳制 1..50）与代理国家→城市范围 `GET /api/v1/proxies/countries`（键为稳定国家代码）。环境页大小越界不返回全量，分页无重复遗漏。
 - **引用聚合**：代理引用查询一次取 3 条 SELECT（当前引用、全部运行行、绑定配置版本 `IN` 查询），不随代理数 × 运行绑定数增长；`list_proxies` 在 20/100/1000 代理规模下 SELECT 数恒定（≤8）。代理使用计数与明细取当前配置 ∪ 运行绑定版本的并集，按环境去重并标 `current` / `bound` / `both`；仅运行绑定占用仍阻止删除。
-- **运行摘要**：`GET /api/v1/profiles/runtime-summary` 一次返回全部环境运行状态与运行总数；SSE 事件带 `config_version` 围栏，旧版本/旧实例迟到事件丢弃，重复事件无副作用且不触发列表重取。
+- **运行投影（t098）**：运行状态随有界集合页按行交付（服务端按页内 id 一次批量解析，查询数不随总量增长），全库运行摘要端点已删除；SSE 事件、集合读取与操作结果共用 `state_revision` 单调围栏（运行行每次写入递增），旧修订迟到事件丢弃，重复事件无副作用且不触发列表重取。
 
 ## 3. 运维与验证命令
 
