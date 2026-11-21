@@ -22,9 +22,9 @@ t097 的 internal 媒体网在 OrbStack 上不发布宿主回环端口，Stream 
 
 <!-- /规范 -->
 
-- [ ] [deploy] AC-001：正式拓扑下，宿主仅通过回环 UDP 发布与 Stream 互通，Chrome Viewer 收到动态媒体并可操作。Stream 能连接本 Profile Gateway 信令。正常 Stream 没有对应 Policy Agent。
-- [ ] [deploy] AC-002：Stream 拒绝连接公网、局域网、宿主服务（含 FlClash）、其它 Profile 与 Browser 的其它网络；IPv6 无出站。出口隔离不可用时 Stream 无法启动。未绑定代理的 Browser 与已绑定代理的 Browser 保持既有隔离和出口选择。
-- [ ] [deploy] AC-003：隔离实例从两类 Policy Agent 拓扑升级后保留 Profile 数据与运行意愿，收敛到每 Browser 一个 Agent 的形状并恢复媒体。回退到支持的上一 release 后旧版媒体与代理路径可用，另一部署资源归属与运行状态保持。
+- [x] [deploy] AC-001：正式拓扑下，宿主仅通过回环 UDP 发布与 Stream 互通，Chrome Viewer 收到动态媒体并可操作。Stream 能连接本 Profile Gateway 信令。正常 Stream 没有对应 Policy Agent。
+- [x] [deploy] AC-002：Stream 拒绝连接公网、局域网、宿主服务（含 FlClash）、其它 Profile 与 Browser 的其它网络；IPv6 无出站。出口隔离不可用时 Stream 无法启动。未绑定代理的 Browser 与已绑定代理的 Browser 保持既有隔离和出口选择。
+- [x] [deploy] AC-003：隔离实例从两类 Policy Agent 拓扑升级后保留 Profile 数据与运行意愿，收敛到每 Browser 一个 Agent 的形状并恢复媒体。回退到支持的上一 release 后旧版媒体与代理路径可用，另一部署资源归属与运行状态保持。
 
 ### 可测试性声明
 

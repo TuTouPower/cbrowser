@@ -37,7 +37,7 @@ git switch --detach v0.2.1
 
 构建脚本读取 `config/font_assets.lock.json`，自动从锁定地址下载字体包并校验 SHA-256，构建六个镜像并生成 `.scratch/images.json`。前端在 Docker 构建阶段打包进 Caddy 镜像。两条安装路径都会从 Browser 镜像把 Windows 和 macOS 字体导入 fonts 卷；重复部署复用同一内容版本。普通用户无需寻找、另行下载或安装字体。
 
-Browser、Stream 和 Caddy 构建使用清华 Debian 镜像站。可通过 `CBROWSER_APT_MIRROR` 指定其他 Debian 镜像站域名。构建继续使用 Docker 配置的代理，只有明确要求某些站点直连时，才将站点域名加入构建终端的 `NO_PROXY`。
+Browser、Stream、Supervisor 和 Caddy 构建使用清华 Debian 镜像站。可通过 `CBROWSER_APT_MIRROR` 指定其他 Debian 镜像站域名。构建继续使用 Docker 配置的代理，只有明确要求某些站点直连时，才将站点域名加入构建终端的 `NO_PROXY`。
 
 ### 2.2 写入管理员密码
 
@@ -66,6 +66,12 @@ export CBROWSER_ENGINE_DOWNLOAD_PROXY=http://host.docker.internal:7890
 ```
 
 代理地址必须能从 Docker 容器访问。部署脚本将该配置交由 Supervisor，只给下载辅助容器设置 `HTTP_PROXY` 和 `HTTPS_PROXY`。Profile 出口代理由管理页单独配置。
+
+### 2.4 媒体出口与宿主代理
+
+同机 Chrome 的媒体 UDP 只发布到 Docker 宿主回环。Stream 只连接该 Profile 的 Gateway 并回复已建立的媒体流。媒体网要求 Docker daemon 所在 Linux 内核支持 nftables，并启用 `net.bridge.bridge-nf-call-iptables=1`。规则在启动 Stream 前安装，Supervisor 重启时会还原存活 Stream 的规则。安装或还原失败时，Stream 分别保持未启动或被停止。
+
+OrbStack 部署按本机运维配置把 `network_proxy` 设为 `none`，以免透明代理影响未配置代理的 Browser。Docker 建镜像和引擎首次下载的代理各自配置。Profile 只使用管理页中为该 Profile 明确设置的代理。
 
 ## 3. Release 模型
 

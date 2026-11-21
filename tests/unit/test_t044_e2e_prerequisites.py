@@ -259,7 +259,8 @@ def test_worker_resource_offsets_reject_gw5_octet_overflow():
         e2e_env.worker_resource_offsets(environ={"PYTEST_XDIST_WORKER": "gw5"})
 
 
-def test_pytest_configure_repartitions_inherited_ports_on_workers(monkeypatch):
+@pytest.mark.parametrize("udp_base", [30000, 38000])
+def test_pytest_configure_repartitions_inherited_ports_on_workers(monkeypatch, udp_base):
     """AC-003: a worker must overwrite the controller's inherited base."""
     import importlib.util
     import os
@@ -275,16 +276,16 @@ def test_pytest_configure_repartitions_inherited_ports_on_workers(monkeypatch):
     # inherited through its environment before pytest_configure runs.
     monkeypatch.setenv("PYTEST_XDIST_WORKER", "gw2")
     monkeypatch.setenv("CBROWSER_INSTANCE_ID", "controller-instance")
-    monkeypatch.setenv("CBROWSER_E2E_UDP_BASE", "30000")
+    monkeypatch.setenv("CBROWSER_E2E_UDP_BASE", str(udp_base))
     monkeypatch.setenv("CBROWSER_E2E_HTTP_BASE", "35000")
     monkeypatch.setenv("CBROWSER_E2E_MEDIA_POOL", "10.251.0.0/16")
-    monkeypatch.setenv("CBROWSER_UDP_MUX_MIN_PORT", "30000")
-    monkeypatch.setenv("CBROWSER_UDP_MUX_MAX_PORT", "30991")
+    monkeypatch.setenv("CBROWSER_UDP_MUX_MIN_PORT", str(udp_base))
+    monkeypatch.setenv("CBROWSER_UDP_MUX_MAX_PORT", str(udp_base + 991))
 
     mod.pytest_configure(None)
 
-    assert os.environ["CBROWSER_E2E_UDP_BASE"] == "32000"
+    assert os.environ["CBROWSER_E2E_UDP_BASE"] == str(udp_base + 2000)
     assert os.environ["CBROWSER_E2E_HTTP_BASE"] == "37000"
     assert os.environ["CBROWSER_E2E_MEDIA_POOL"] == "10.253.0.0/16"
-    assert os.environ["CBROWSER_UDP_MUX_MIN_PORT"] == "32000"
-    assert os.environ["CBROWSER_UDP_MUX_MAX_PORT"] == "32991"
+    assert os.environ["CBROWSER_UDP_MUX_MIN_PORT"] == str(udp_base + 2000)
+    assert os.environ["CBROWSER_UDP_MUX_MAX_PORT"] == str(udp_base + 2991)

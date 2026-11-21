@@ -10,3 +10,9 @@
     - **Browser-only Agent**：Policy Agent 只为 Browser 保留（ADR 039 的形态、协议与围栏不变，ADR 038 的代理封闭口径不变）；协议与策略模型的 role 收敛为 browser-only。Agent 容器改名 `<prefix>-<NNNN>-policy-agent` 并与沙箱同属 `<prefix>-profiles` 分组（service `<NNNN>-policy-agent`、标签含展示编号），与 ADR 040（t083）的 Supervisor 部署身份/接管口径一致：归属与接管仍只认 deployment/profile/instance/config version/目标容器标签全等，分组与名称只用于呈现和形状判定。
     - **收敛**：Supervisor 启动的孤儿收敛一次性处理存量旧形状——绑定 Stream 的 Agent 一律经完整身份校验后删除；绑定存活 Browser 且身份全等的旧形状 Agent（旧哈希槽名、无分组标签）由 ensure 路径就地替换为现行形状，保证升级后每个 Browser 至多一个现行 Agent、无旧 Agent 残留。Stream-only 替换的触发面收窄为媒体网络不合规与可修复的未注册；策略不可确认的 30 秒预算与暂停隔离只适用于 Browser。
     - **验证与回退**：声明式拓扑的真机等价性（宿主回环 UDP 发布在 internal 网络上的可达与回包、Gateway 信令、公网/局域网/宿主服务/跨 Profile 拒绝矩阵、IPv6 双栈）由 p159 的隔离最小拓扑 spike 实测，部署级媒体与升级/回退验证见 p160/p161。**2026-11-21 实测结论：回退条件已触发。** s028（`docs/spikes/s028_t097_media_topology_orbstack/report.md`）在目标 OrbStack arm64 / Docker 29.4.0 证明：internal 网桥上的容器所有已发布端口（TCP 与 UDP）被守护进程静默丢弃（`docker port` 报未发布、inspect 为 `null`、宿主无监听），普通网桥同参数立即生效；因此本 ADR「internal 网仍可宿主回环 UDP 发布」的等价前提不成立，宿主 Chrome 媒体入口丢失（finding d054）。同网 Gateway 信令与公网/局域网/宿主服务/其它 Profile/IPv6 出站拒绝矩阵由拓扑本身成立。按既定回退条件执行：媒体网改回可路由 bridge，同时必须以等价声明式手段恢复 Stream 出站拒绝（网络级出口 ACL），不得恢复 Stream Policy Agent 与命令式规则巡检；改造登记 p164，完成前 AC-004 真机媒体判定为失败，实施后按 s028 同法重验。
+
+## t102 回退实现
+
+s028 证实 OrbStack 无法在 internal 网桥发布端口。媒体网使用可路由 bridge，保留独立子网和回环 UDP 发布。Supervisor 在启动 Stream 前，用短命的受限 Docker 辅助容器把出口策略原子安装到 Docker VM 的内核。规则只匹配该网桥和固定 Stream 地址，允许本 Profile 的 Gateway 信令与媒体 UDP 回复。Stream 的 IPv6 和外部 DNS 出口关闭。
+
+长期运行的 Policy Agent 只服务 Browser。替换旧形状 Browser Agent 时，新进程先比对现有内核规则，完全相同即可接管。未通过比对的已有规则仍由既有失败封闭流程处理。宿主 FlClash 和全局 Docker/OrbStack 配置沿用部署前的设置。

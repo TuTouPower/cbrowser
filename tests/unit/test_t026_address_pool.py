@@ -12,6 +12,7 @@ import pytest
 from cbrowser.supervisor.address_pool import (
     LABEL_GATEWAY_ENDPOINT,
     LABEL_MEDIA_SPEC,
+    MEDIA_SPEC_ID,
     MediaNetworkPlan,
     MediaPoolExhaustedError,
     MediaSubnetAllocator,
@@ -63,7 +64,8 @@ def test_allocator_exhaustion_is_explicit():
 def test_labels_round_trip_and_drift_detection():
     plan = plan_for_subnet(_net("10.251.3.0/24"))
     labels = media_network_labels({"com.cbrowser.role": "media"}, plan)
-    assert labels[LABEL_MEDIA_SPEC] == "fixed-endpoint-v1"
+    assert labels[LABEL_MEDIA_SPEC] == MEDIA_SPEC_ID
+    assert plan_from_labels({**labels, LABEL_MEDIA_SPEC: "fixed-endpoint-v1"}) is None
     assert labels[LABEL_GATEWAY_ENDPOINT] == "10.251.3.254"
     assert plan_from_labels(labels) == plan
     # A spec id from another generation is not this spec.

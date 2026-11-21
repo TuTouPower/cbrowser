@@ -1,0 +1,15 @@
+{
+  "tid": "t102",
+  "attempt": 1,
+  "execution_id": "891b0613c7e5455886fb74b7ef0aa972",
+  "status": "done",
+  "branch": "t102_stream_media_egress_acl",
+  "base_sha": "190d652503cf5c2e9a6d14a91adc2f85d0df9547",
+  "spec_source_sha": "190d652503cf5c2e9a6d14a91adc2f85d0df9547",
+  "tests": "统一门禁的契约、单元、集成、前端、构建、协议与镜像校验通过。Docker/Chrome E2E 原始运行 104 通过、2 失败、2 默认跳过。跨 IPC 探针原样复跑通过，容器图节点替换后复跑通过。按原始结果与复验共 106 通过、2 默认跳过。六项恢复与重试专项全部通过。原始门禁和两项复验分别保留于主仓 `.scratch/t102_evidence/verification_summary.md`。",
+  "blackbox": "实际 OrbStack 和 Chrome 验证回环 UDP 视频、音频、键盘、Gateway 信令、完整拒绝矩阵和辅助镜像失败封闭。v0.2.1 → t102 → v0.2.1 验证两个 Profile、Agent 形状及回退 ACL 清理。删掉测试 ACL 并重启 Supervisor 后，旧容器保留、两个 Profile 的 readiness 恢复。证据见主仓 `.scratch/t102_evidence/acceptance/summary.md`。",
+  "review": "第五轮代码与测试轴均通过，全部既有 finding 已关闭，三条 AC 均判 TICK-VALID。见 [`review_code.md`](review_code.md) 和 [`review_test.md`](review_test.md)。",
+  "review_scope": "936adcc46540c1ec",
+  "pending": [],
+  "findings": []
+}

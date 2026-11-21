@@ -65,6 +65,11 @@ class PolicyAgentExecutor:
         return addresses
 
     def install(self, spec: NetworkPolicySpec, *, replace: bool) -> None:
+        # Replacing the Agent does not replace the owned Browser namespace.
+        # Adopt only an exact kernel match. A pre-existing mismatched table
+        # still fails the fresh-install ownership guard in apply_policy.
+        if not replace and verify_policy(spec):
+            return
         if replace:
             replace_policy(spec)
         else:

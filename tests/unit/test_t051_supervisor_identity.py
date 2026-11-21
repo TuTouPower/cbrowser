@@ -282,7 +282,7 @@ class _BlockingNetworks:
     def list(self):
         return list(self.by_name.values())
 
-    def create(self, name: str, driver=None, ipam=None, labels=None, internal=None):
+    def create(self, name: str, driver=None, ipam=None, labels=None, internal=None, **kwargs):
         self.create_calls += 1
         if "slow" in name:
             self.block.wait(timeout=30)

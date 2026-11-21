@@ -1,7 +1,7 @@
 ---
 slug: release_deployment
 status: active
-tasks: [baseline, t075, t080, t097, t100]
+tasks: [baseline, t075, t080, t097, t100, t102]
 ---
 # 需求规范：Release 发布与回退
 
@@ -23,11 +23,16 @@ tasks: [baseline, t075, t080, t097, t100]
 
 - 连续以相同配置发布是幂等的收敛操作：脚本从不显式重启任何服务；Caddy 的重建只由其环境中的 Caddyfile/前端产物指纹变化触发，配置未变时 Caddy 不重启，配置变化时只重建受影响服务。
 
-- 资源形状收敛（t097）：从仍有两类 Policy Agent 的 release 升级后，Supervisor 启动收敛一次性替换存量旧形状资源——Stream Agent 删除、旧名 Browser Agent 换为 `<prefix>-<NNNN>-policy-agent` 现行形状、非 internal 媒体网络经 Stream-only 重建收敛；运行意愿与 Profile 数据保留，无旧 Agent 残留。真实升级/回退验证属部署验收（t097 AC-005，本地补验 p161）。
+- 资源形状收敛（t097）：从仍有两类 Policy Agent 的 release 升级后，Supervisor 启动时删除旧 Stream Agent，将旧名 Browser Agent 换为 `<prefix>-<NNNN>-policy-agent`。媒体网形状按当前 release 收敛。运行意愿与 Profile 数据保留。t102 完成实际升级与回退补验（p161）。
+
+## 媒体网生命周期（t102）
+
+- 升级时重建旧形状媒体网和 Stream，保留运行中的 Browser、Profile 数据与运行意愿。已存在的 Browser 命名空间内核策略只有在和目标策略精确一致时才由新 Policy Agent 接管。
+- 当前/上一 release 的镜像构成一套切换目标。同一 Compose、DB schema 且保留 readiness 能力的旧 release 可回退。回退同样由 Supervisor 恢复媒体与 Gateway 注册。回退到不感知桥级 ACL 的旧 release 时，发布入口清理本次实际移除的媒体网桥遗留 ACL。
 
 ## 回退约束
 
-- 回退显式选择上一（或命名）release 重部署并跑同一 readiness 验收；不删除 Browser、Profile 数据或数据库。回退一律采用目标 release env 记录的实例身份执行（compose 插值中 shell 环境优先于 env 文件，调用方 shell 的身份值不得覆盖目标 release 的项目/prefix/数据根/secrets）。
+- 回退显式选择上一（或命名）release 重部署并跑同一 readiness 验收，保留 Profile 数据和数据库。目标 release 的 Supervisor 按目标资源形状恢复 Profile，必要时重建 Browser。回退一律采用目标 release env 记录的实例身份执行（compose 插值中 shell 环境优先于 env 文件，调用方 shell 的身份值不得覆盖目标 release 的项目/prefix/数据根/secrets）。
 - 目标 release 不具备 readiness 能力、其迁移 head 与当前数据库实际 stamp 不等、或工作树 `compose.yaml` 指纹与目标 `compose_sha256` 不一致时，在任何变更前拒绝并说明原因；不存在降级迁移。回退时按目标 release 记录的端口重渲染 Caddyfile，渲染产物 SHA-256 与目标 manifest 的 `caddyfile_sha256` 不一致同样拒绝（t054）。当前数据库版本为只读读取的实际 `alembic_version` stamp（空库/无表留给 API 启动处理）：同代旧 head、跨代旧 release（含需已删除 `ALLOWED_ORIGINS` 的旧 t042 release，不做兼容）均因不等被拒绝；一次已拉起又验收失败的发布若已把数据库升版，stamp 已变，旧 head 回退同样拒绝。回退验收失败时不报成功、指针不变。
 
 ## 凭证分级

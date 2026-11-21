@@ -205,6 +205,7 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
         # Start API, Gateway, and Supervisor subprocesses
         await asyncio.to_thread(api_proc.start)
         await gateway.start()
+        await gateway.attach_docker_relay(d_client, prefix)
         await asyncio.to_thread(sup_proc.start)
 
         api_headers = {"Authorization": f"Bearer {sup_token_val}"}

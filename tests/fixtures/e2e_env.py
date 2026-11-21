@@ -190,8 +190,8 @@ def worker_resource_offsets(
 ) -> dict[str, str]:
     """Deterministic per-xdist-worker resource partition (t044 AC-006).
 
-    ``gw0`` (or no worker variable) keeps the historical single-lane
-    defaults; higher workers get disjoint UDP/HTTP port bases and media
+    ``gw0`` (or no worker variable) uses the configured UDP base or the
+    single-lane default. Higher workers get disjoint UDP/HTTP bases and media
     subnets so parallel lanes on one Docker daemon cannot collide.  Each
     lane also gets a deterministic, non-empty deployment identity
     (``CBROWSER_INSTANCE_ID``) for the t069 ownership label.
@@ -200,10 +200,10 @@ def worker_resource_offsets(
     worker = env.get("PYTEST_XDIST_WORKER", "")
     match = re.fullmatch(r"gw(\d+)", worker)
     idx = int(match.group(1)) if match else 0
-    udp_base = 30000 + idx * 1000
+    udp_base = int(env.get("CBROWSER_E2E_UDP_BASE", "30000")) + idx * 1000
     http_base = 35000 + idx * 1000
     octet = 251 + idx
-    if octet > 255 or udp_base + 990 > 65535 or http_base > 65535:
+    if octet > 255 or udp_base < 1 or udp_base + 991 > 65535 or http_base > 65535:
         raise ValueError(
             f"xdist worker index out of range: {idx} "
             f"(octet 10.{octet}.0.0/16 / UDP {udp_base} / HTTP {http_base} "

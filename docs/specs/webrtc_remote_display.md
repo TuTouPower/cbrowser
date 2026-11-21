@@ -1,7 +1,7 @@
 ---
 slug: webrtc_remote_display
 status: active
-tasks: [baseline, t004, t006, t007, t014, t015, t019, t022, t023, t024, t026, t043, t039, t042, t054, t058, t061, t064, t063, t069, t097]
+tasks: [baseline, t004, t006, t007, t014, t015, t019, t022, t023, t024, t026, t043, t039, t042, t054, t058, t061, t064, t063, t069, t097, t102]
 ---
 # 需求规范：WebRTC 远程画面传输与输入
 
@@ -92,8 +92,8 @@ Stream 只访问对应 Profile 的 X11、Xauthority、Pulse 和媒体网络，�
 ## 媒体链路回环直连（t042；t054 重写：局域网直连删除）
 
 - 媒体直连只走本机回环：不使用 STUN/TURN 中继、无 ICE 重启机制；Stream 容器固定 `CBROWSER_WEBRTC_PUBLIC_IP=127.0.0.1`，UDP mux 端口固定绑定 `127.0.0.1`（t054 删除局域网 host 候选扩展，ADR 013 回到仅回环）。
-- 媒体网络拓扑隔离（t097）：per-Profile 媒体网络为 internal 受管网络，单一拓扑同时承载本机媒体与 Gateway 信令（Gateway 固定端点）；Stream 只经该网络与约定的 Gateway 信令、本机媒体通道通信，对公网、局域网、宿主其它服务、Browser 的其它网络与其它 Profile 的出站由拓扑本身拒绝，不再依赖 Stream 内的已安装规则集。网络配置失配（非 internal、计划标签或 IPAM 漂移）按不合规收敛重建，不得把越界的 Stream 标记为可用。**本地实测修正（2026-11-21，s028 / d054 / p159）**：目标 OrbStack / Docker 29.4.0 上 internal 网桥不承载任何已发布端口，宿主回环 UDP 发布失效，媒体入口不成立；Gateway 信令与出站拒绝矩阵仍由拓扑成立。按 t097 ADR 回退条件须把媒体网改回可路由 bridge 并以等价声明式手段（网络级出口 ACL）恢复 Stream 出站拒绝，不得恢复 Stream Policy Agent；改造登记 p164，完成前不宣称真机媒体 PASS。
-- 容器网络漂移自愈（AC-005）中的网络版本比对已删除：运行期不存在已应用网络版本，`_converge_session` 与启动对账不再比对绑定地址与通告 IP；媒体策略放行只剩链路本地范围（`169.254.0.0/16` / `fe80::/10`）。
+- 媒体网使用每 Profile 独立的可路由 bridge。Supervisor 只将 Stream 的 UDP mux 发布到宿主 `127.0.0.1`。Stream 启动前，Docker VM 内核在该桥上安装以固定 Stream IPv4 地址匹配的出口 ACL，允许与本 Profile 固定 Gateway 的信令和已建立的媒体 UDP 回复，拒绝其余出口。Stream 使用 IPv4，外部 DNS 与 IPv6 出站关闭。出口规则安装失败时禁止创建 Stream。发现旧网桥或身份不符时先停止旧 Stream，再重建网络和 Stream，保留 Browser 与 Profile 数据。见 ADR 041 对 s028 的回退记录。
+- Supervisor 启动时，在接管仍在运行的 Stream 前重新安装所属媒体网的 ACL。还原失败时停止该 Stream。媒体规则按网桥生命周期执行，无独立常驻 Stream Policy Agent。
 
 ## 会话阶段呈现与断线恢复收敛（t061）
 

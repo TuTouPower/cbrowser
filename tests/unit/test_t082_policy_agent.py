@@ -324,3 +324,17 @@ def test_client_unavailable_when_socket_missing() -> None:
             client.health()
     finally:
         listener.close()
+
+
+def test_replacement_agent_adopts_an_exact_existing_kernel_policy(monkeypatch):
+    from unittest.mock import Mock
+    from cbrowser.supervisor import policy_agent
+
+    spec = NetworkPolicySpec(role="browser")
+    verify = Mock(return_value=True)
+    apply = Mock(side_effect=AssertionError("already-applied rules must not be rewritten"))
+    monkeypatch.setattr(policy_agent, "verify_policy", verify)
+    monkeypatch.setattr(policy_agent, "apply_policy", apply)
+    PolicyAgentExecutor().install(spec, replace=False)
+    verify.assert_called_once_with(spec)
+    apply.assert_not_called()

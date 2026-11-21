@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import ipaddress
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import docker.errors
 import pytest
+from cbrowser.supervisor.address_pool import plan_for_subnet
 from cbrowser.supervisor.docker_adapter import DockerAdapter, DockerSandboxError
 from cbrowser.supervisor.path_validator import PathValidator
 from cbrowser.supervisor.selkies_tokens import SelkiesTokens
@@ -89,11 +91,20 @@ async def _start(
     tokens_path = secret_dir / "selkies_tokens.json"
     tokens.write_credentials_file(tokens_path)
 
+    adapter.inspect_media_network = MagicMock(return_value={
+        "conforms": True,
+        "bridge": "cm0000000000000",
+        "plan": plan_for_subnet(ipaddress.IPv4Network("10.0.0.0/24")),
+        "gateway_ip": "10.0.0.254",
+        "endpoints": {"gateway": "10.0.0.254"},
+    })
+    adapter._media_acl = MagicMock()
     await adapter.start_stream_container(
         profile_id="p2",
         runtime_instance_id="inst_display",
         browser_container_name="cbrowser-p2-browser",
         udp_mux_port=30006,
+        gateway_url="ws://10.0.0.254:18080",
         agent_secret_path=agent_secret,
         selkies_tokens_path=tokens_path,
         snapshot_json_path=snapshot,

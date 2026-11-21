@@ -86,6 +86,7 @@ PY_STUB = (
     "if any(arg.endswith(\"image_manifest.py\") for arg in sys.argv):\n"
     "    print(\"browser sha256:0000000000000000000000000000000000000000000000000000000000000000\")\n"
     "    print(\"api sha256:0000000000000000000000000000000000000000000000000000000000000000\")\n"
+    "    print(\"caddy sha256:0000000000000000000000000000000000000000000000000000000000000000\")\n"
     "    sys.exit(0)\n"
     "if \"render\" in sys.argv[1:]:\n"
     "    rc = int(os.environ.get(\"STUB_RENDER_RC\", \"2\"))\n"
