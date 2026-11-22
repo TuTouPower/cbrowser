@@ -65,7 +65,8 @@ def test_removed_fields_absent_across_orm_domain_classification_and_probe() -> N
         assert model.screen_width == 1920
         assert model.screen_height == 1080
         assert model.color_scheme == "light"
-        assert model.extension_paths == []
+        assert model.allow_extensions is False
+        assert model.extension_ids == []
 
     summary = sanitize_config_summary(ProfileConfig(name="Probe", mute_audio=True))
     for field in REMOVED_FIELDS:
@@ -98,7 +99,7 @@ async def test_runner_injects_mute_audio_and_restore_session_without_dead_flags(
         pid_file.write_text("99999", encoding="utf-8")
         return SimpleNamespace(pages=[], new_page=AsyncMock())
 
-    monkeypatch.setattr("cbrowser.runtime_agent.runner.launch_persistent_context_async", fake_launch)
+    monkeypatch.setattr("cbrowser.runtime_agent.runner.launch_stealth_persistent_context", fake_launch)
     monkeypatch.setattr("cbrowser.runtime_agent.runner.seed_widevine_hint", lambda *_a, **_kw: None)
     monkeypatch.setattr("cbrowser.runtime_agent.runner.profile_font_dirs", lambda *_a, **_kw: [tmp_path / "f"])
     monkeypatch.setattr("cbrowser.runtime_agent.runner.prepare_profile_fontconfig", lambda *_a, **_kw: tmp_path / "fonts.conf")
@@ -123,7 +124,8 @@ async def test_runner_injects_mute_audio_and_restore_session_without_dead_flags(
                         "mute_audio": mute,
                         "restore_session": restore,
                         "set_google_default": False,
-                        "extension_paths": ["/opt/ext1"] if idx == 0 else [],
+                        "allow_extensions": False,
+                        "extension_ids": [],
                     },
                     "created_at": "2026-01-01T00:00:00+00:00",
                 }
@@ -185,8 +187,10 @@ async def test_runner_injects_mute_audio_and_restore_session_without_dead_flags(
 
     assert "--mute-audio" in on_call["args"]
     assert "--restore-last-session" in on_call["args"]
-    assert on_call["extension_paths"] == ["/opt/ext1"]
+    assert on_call["allow_extensions"] is False
+    assert on_call["extension_paths"] is None
 
     assert "--mute-audio" not in off_call["args"]
     assert "--restore-last-session" not in off_call["args"]
+    assert off_call["allow_extensions"] is False
     assert off_call["extension_paths"] is None

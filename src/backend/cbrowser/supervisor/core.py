@@ -29,6 +29,12 @@ from urllib.parse import quote
 
 import httpx
 from cbrowser import font_sets
+from cbrowser.extensions.manifest import (
+    EXTENSION_ASSET_ID_RE,
+    EXTENSION_UNAVAILABLE,
+    resolve_extensions_root,
+    verify_extension_directory,
+)
 from cbrowser.domain.models import (
     ConfigVersionSnapshot,
     PreviewObservedRequest,
@@ -125,6 +131,13 @@ class FontSetUnavailableError(RuntimeError):
 
     def __init__(self) -> None:
         super().__init__(FONT_SET_UNAVAILABLE)
+
+
+class ExtensionUnavailableError(RuntimeError):
+    """Fail closed when a bound managed extension directory is missing or corrupt (t104)."""
+
+    def __init__(self) -> None:
+        super().__init__(EXTENSION_UNAVAILABLE)
 
 
 def browser_runtime_ready(
@@ -254,6 +267,9 @@ class SupervisorCore:
         # Entries are bounded by the number of (profile, instance,
         # version) starts in this process's lifetime.
         self._font_verified: set[tuple[str, str, int, str, str]] = set()
+        self._extension_verified: set[
+            tuple[str, str, int, tuple[str, ...]]
+        ] = set()
         self.ports = port_allocator
         self.events = event_forwarder
         self.api = api_client
@@ -2275,13 +2291,13 @@ class SupervisorCore:
                 )
                 return "stopped" if delivered else None
             elif is_error_exit_health(health.details):
-                reason = (
-                    "process_lost"
-                    if health.details.get("exit_reason")
-                    == "process_observation_lost"
-                    else FONT_SET_UNAVAILABLE
-                    if health.details.get("exit_reason") == FONT_SET_UNAVAILABLE
-                    else "agent_exit"
+                exit_reason_map = {
+                    "process_observation_lost": "process_lost",
+                    FONT_SET_UNAVAILABLE: FONT_SET_UNAVAILABLE,
+                    EXTENSION_UNAVAILABLE: EXTENSION_UNAVAILABLE,
+                }
+                reason = exit_reason_map.get(
+                    str(health.details.get("exit_reason") or ""), "agent_exit"
                 )
                 delivered = await self.report_terminal_observation(
                     profile_id,
@@ -2891,6 +2907,64 @@ class SupervisorCore:
         if runtime_instance_id is not None:
             self._font_verified.add(fence)
 
+    def _resolve_extensions_root_path(self) -> Path:
+        planner = getattr(self.docker, "mount_planner", None)
+        ext_root = (
+            Path(planner.extensions_root)
+            if planner is not None and getattr(planner, "extensions_root", None) is not None
+            else resolve_extensions_root(
+                data_root=getattr(
+                    getattr(self.docker, "validator", None), "data_root", None
+                )
+            )
+        )
+        if ext_root is None:
+            raise ExtensionUnavailableError()
+        return ext_root
+
+    @staticmethod
+    def _verify_single_extension_dir(ext_root: Path, asset_id: str) -> str:
+        if not EXTENSION_ASSET_ID_RE.fullmatch(asset_id):
+            raise ExtensionUnavailableError()
+        ext_dir = ext_root / asset_id
+        if ext_dir.is_symlink() or not ext_dir.is_dir():
+            raise ExtensionUnavailableError()
+        verdict = verify_extension_directory(ext_dir, expected_asset_id=asset_id)
+        if not verdict["ok"] or not verdict.get("chromium_id"):
+            raise ExtensionUnavailableError()
+        return str(verdict["chromium_id"])
+
+    def _validate_extensions(
+        self,
+        config: ProfileConfig,
+        runtime_instance_id: str | None = None,
+        *,
+        profile_id: str | None = None,
+        config_version: int | None = None,
+    ) -> None:
+        """Fail closed when allow_extensions binds missing or tampered managed assets."""
+        if not config.allow_extensions or not config.extension_ids:
+            return
+        fence = (
+            profile_id or "",
+            runtime_instance_id or "",
+            config_version or 0,
+            tuple(config.extension_ids),
+        )
+        if runtime_instance_id is not None and fence in self._extension_verified:
+            return
+
+        ext_root = self._resolve_extensions_root_path()
+        seen_chromium_ids: set[str] = set()
+        for asset_id in config.extension_ids:
+            cid = self._verify_single_extension_dir(ext_root, asset_id)
+            if cid in seen_chromium_ids:
+                raise ExtensionUnavailableError()
+            seen_chromium_ids.add(cid)
+
+        if runtime_instance_id is not None:
+            self._extension_verified.add(fence)
+
     async def start_profile(
         self,
         profile_id: str,
@@ -2997,6 +3071,12 @@ class SupervisorCore:
 
             try:
                 self._validate_font_set(
+                    config,
+                    runtime_instance_id,
+                    profile_id=profile_id,
+                    config_version=config_version,
+                )
+                self._validate_extensions(
                     config,
                     runtime_instance_id,
                     profile_id=profile_id,
@@ -3162,6 +3242,8 @@ class SupervisorCore:
                     if isinstance(err, ProxyCredentialsChangedError)
                     else FONT_SET_UNAVAILABLE
                     if isinstance(err, FontSetUnavailableError)
+                    else EXTENSION_UNAVAILABLE
+                    if isinstance(err, ExtensionUnavailableError)
                     else "startup_failure"
                 )
                 logger.error(

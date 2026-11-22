@@ -105,7 +105,8 @@ function profile(overrides: Partial<ProfileResponse> = {}): ProfileResponse {
     include_cjk_fonts: false,
     fingerprint_platform: "windows",
     font_set_id: null,
-    extension_paths: [],
+    allow_extensions: false,
+    extension_ids: [],
     set_google_default: true,
     capture_preview: true,
     restore_session: true,
@@ -132,6 +133,10 @@ function makeStub(opts: {
     proxies: { list: vi.fn(async () => opts.proxies ?? []) },
     fontSets: {
       list: vi.fn(async () => ({ items: [], default_font_set_id: {} })),
+    },
+    extensions: {
+      list: vi.fn(async () => ({ items: [] })),
+      upload: vi.fn(),
     },
   } as unknown as ApiClient;
 }
@@ -172,7 +177,9 @@ function renderForm(opts: {
 
 describe("ProfileForm", () => {
   it("renders the four sections, blocks an empty name and submits", async () => {
-    const onSubmit = vi.fn(async () => undefined);
+    const onSubmit = vi.fn(
+      async (_values: ProfileCreateRequest | ProfileUpdateRequest) => undefined,
+    );
     renderForm({
       mode: "create",
       stub: makeStub({ proxies: [proxy()], groups: [group()] }),
@@ -241,7 +248,9 @@ describe("ProfileForm", () => {
   });
 
   it("links language to the timezone and allows a manual override", async () => {
-    const onSubmit = vi.fn(async () => undefined);
+    const onSubmit = vi.fn(
+      async (_values: ProfileCreateRequest | ProfileUpdateRequest) => undefined,
+    );
     renderForm({ mode: "create", stub: makeStub(), onSubmit });
     const tz = screen.getByTestId("profile-form-timezone");
     const localeBox = within(
@@ -275,7 +284,9 @@ describe("ProfileForm", () => {
   });
 
   it("keeps the language when the timezone is cleared to auto", async () => {
-    const onSubmit = vi.fn(async () => undefined);
+    const onSubmit = vi.fn(
+      async (_values: ProfileCreateRequest | ProfileUpdateRequest) => undefined,
+    );
     renderForm({ mode: "create", stub: makeStub(), onSubmit });
     const tz = screen.getByTestId("profile-form-timezone");
     fireEvent.focus(tz);
@@ -330,7 +341,9 @@ describe("ProfileForm", () => {
       country_code: "HK",
       region_label: "Hong Kong",
     };
-    const onSubmit = vi.fn(async () => undefined);
+    const onSubmit = vi.fn(
+      async (_values: ProfileCreateRequest | ProfileUpdateRequest) => undefined,
+    );
     renderForm({
       mode: "create",
       stub: makeStub({ proxies: [usProxy, hkProxy] }),
@@ -459,7 +472,9 @@ describe("ProfileForm", () => {
   });
 
   it("aligns timezone to Asia/Shanghai when locale is switched on an unassigned form", async () => {
-    const onSubmit = vi.fn(async () => undefined);
+    const onSubmit = vi.fn(
+      async (_values: ProfileCreateRequest | ProfileUpdateRequest) => undefined,
+    );
     renderForm({ mode: "create", stub: makeStub(), onSubmit });
 
     const localeBox = within(
@@ -775,7 +790,7 @@ describe("ProfileForm (t077)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("active advanced options and extension_paths carry bilingual help triggers with mute_audio and restore_session boundaries (t103)", async () => {
+  it("active advanced options and allow_extensions carry bilingual help triggers with mute_audio and restore_session boundaries (t103/t104)", async () => {
     renderForm({ mode: "create", stub: makeStub() });
     await screen.findByTestId("profile-form-name");
     const fields = [
@@ -784,7 +799,7 @@ describe("ProfileForm (t077)", () => {
       en.formRestoreSession,
       en.formMuteAudio,
       en.formCapturePreview,
-      en.formExtensionPaths,
+      en.formAllowExtensions,
     ];
     for (const field of fields) {
       expect(
@@ -897,5 +912,201 @@ describe("ProfileForm (t077)", () => {
       name: en.formColorScheme,
     });
     expect(trigger.textContent).toContain(en.formColorDark);
+  });
+
+  it("hides extension selector by default, toggles privacy/vault notice + free-mode hint + ordered multi-select + upload (t104 AC-003)", async () => {
+    const assetA = {
+      id: "a".repeat(64),
+      chromium_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      name: "Alpha Ext",
+      version: "1.0.0",
+      manifest_version: 3,
+      description: "First extension",
+      package_format: "crx3",
+      identity_source: "crx3_header",
+      manifest_key_sha256: "1".repeat(64),
+      archive_sha256: "2".repeat(64),
+      has_icon: true,
+      icon_url: `/api/v1/extensions/${"a".repeat(64)}/icon`,
+      file_count: 3,
+      total_bytes: 512,
+      integrity: { ok: true, problems: [] },
+      state: "verified",
+      used_by_count: 0,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+    const assetB = {
+      ...assetA,
+      id: "b".repeat(64),
+      chromium_id: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      name: "Bitwarden",
+      version: "2026.11.0",
+    };
+    const assetAConflict = {
+      ...assetA,
+      id: "c".repeat(64),
+      version: "2.0.0",
+    };
+    const assetUploaded = {
+      ...assetA,
+      id: "d".repeat(64),
+      chromium_id: "dddddddddddddddddddddddddddddddd",
+      name: "Uploaded Ext",
+      version: "3.0.0",
+    };
+
+    const uploadFn = vi.fn(async () => assetUploaded);
+    const stub = {
+      groups: {
+        list: vi.fn(async () => []),
+        create: vi.fn(async (data: { name: string }) => ({ ...group(), ...data })),
+      },
+      proxies: { list: vi.fn(async () => []) },
+      fontSets: {
+        list: vi.fn(async () => ({ items: [], default_font_set_id: {} })),
+      },
+      extensions: {
+        list: vi.fn(async () => ({ items: [assetA, assetB, assetAConflict] })),
+        upload: uploadFn,
+      },
+    } as unknown as ApiClient;
+
+    const onSubmit = vi.fn(
+      async (_values: ProfileCreateRequest | ProfileUpdateRequest) => undefined,
+    );
+    renderForm({ mode: "create", stub, onSubmit });
+    await screen.findByTestId("profile-form-name");
+
+    // 1. Default OFF: selector & warnings are hidden, no comma-separated path input.
+    const allowBox = screen.getByRole("checkbox", { name: en.formAllowExtensions });
+    expect(allowBox).not.toBeChecked();
+    expect(screen.queryByTestId("profile-form-extensions-selector")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("profile-form-extensions-warning")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Extension paths")).not.toBeInTheDocument();
+
+    // 2. Toggle ON: privacy/vault-cache warning + Free Mode hint appear.
+    fireEvent.click(allowBox);
+    expect(allowBox).toBeChecked();
+    expect(await screen.findByTestId("profile-form-extensions-warning")).toHaveTextContent(
+      en.formExtensionsPrivacyNotice,
+    );
+    expect(screen.getByTestId("profile-form-free-extensions-hint")).toHaveTextContent(
+      en.formExtensionsFreeModeHint,
+    );
+
+    // 3. Attach A & B -> same-chromium_id C becomes disabled/conflict; move B above A -> [B, A].
+    fireEvent.click(await screen.findByTestId(`ext-attach-${assetA.id}`));
+    expect(screen.getByTestId(`ext-attach-${assetAConflict.id}`)).toBeDisabled();
+    expect(screen.getByTestId(`ext-attach-${assetAConflict.id}`)).toHaveTextContent(
+      en.formExtensionsConflictId,
+    );
+
+    fireEvent.click(screen.getByTestId(`ext-attach-${assetB.id}`));
+    fireEvent.click(screen.getByTestId(`ext-move-up-${assetB.id}`));
+
+    // 4. Inline upload auto-attaches uploaded asset D at end -> [B, A, D].
+    const fileInput = screen.getByTestId("profile-form-extension-file-input");
+    const fakeCrx = new File([new Uint8Array([1, 2, 3])], "uploaded.crx");
+    fireEvent.change(fileInput, { target: { files: [fakeCrx] } });
+    await waitFor(() => expect(uploadFn).toHaveBeenCalledWith(fakeCrx));
+    await waitFor(() =>
+      expect(screen.getByTestId(`profile-selected-ext-${assetUploaded.id}`)).toBeInTheDocument(),
+    );
+
+    // Submit form -> ordered extension_ids + allow_extensions=true submitted.
+    fireEvent.change(screen.getByTestId("profile-form-name"), {
+      target: { value: "Ext Env" },
+    });
+    fireEvent.click(screen.getByTestId("profile-form-submit"));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    const submitted = onSubmit.mock.calls[0]?.[0] as ProfileCreateRequest;
+    expect(submitted.allow_extensions).toBe(true);
+    expect(submitted.extension_ids).toEqual([assetB.id, assetA.id, assetUploaded.id]);
+  });
+
+  it("echoes extensions in edit mode, supports move-down/remove/toggle-off diff submit (t104 AC-003)", async () => {
+    const assetA = {
+      id: "a".repeat(64),
+      chromium_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      name: "Alpha Ext",
+      version: "1.0.0",
+      manifest_version: 3,
+      description: "First extension",
+      package_format: "crx3",
+      identity_source: "crx3_header",
+      manifest_key_sha256: "1".repeat(64),
+      archive_sha256: "2".repeat(64),
+      has_icon: false,
+      icon_url: null,
+      file_count: 2,
+      total_bytes: 256,
+      integrity: { ok: true, problems: [] },
+      state: "verified",
+      used_by_count: 1,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+    const assetB = {
+      ...assetA,
+      id: "b".repeat(64),
+      chromium_id: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      name: "Beta Ext",
+    };
+    const stub = {
+      groups: {
+        list: vi.fn(async () => []),
+        create: vi.fn(async (data: { name: string }) => ({ ...group(), ...data })),
+      },
+      proxies: { list: vi.fn(async () => []) },
+      fontSets: {
+        list: vi.fn(async () => ({ items: [], default_font_set_id: {} })),
+      },
+      extensions: {
+        list: vi.fn(async () => ({ items: [assetA, assetB] })),
+        upload: vi.fn(),
+      },
+    } as unknown as ApiClient;
+
+    const onSubmit = vi.fn(
+      async (_values: ProfileCreateRequest | ProfileUpdateRequest) => undefined,
+    );
+    const { unmount } = renderForm({
+      mode: "edit",
+      initial: profile({ allow_extensions: true, extension_ids: [assetA.id, assetB.id] }),
+      stub,
+      onSubmit,
+    });
+    await screen.findByTestId(`profile-selected-ext-${assetA.id}`);
+    expect(screen.getByTestId(`profile-selected-ext-${assetB.id}`)).toBeInTheDocument();
+
+    // Move A down -> [B, A], then remove B -> [A]
+    fireEvent.click(screen.getByTestId(`ext-move-down-${assetA.id}`));
+    fireEvent.click(screen.getByTestId(`ext-remove-${assetB.id}`));
+    await waitFor(() =>
+      expect(screen.queryByTestId(`profile-selected-ext-${assetB.id}`)).not.toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByTestId("profile-form-submit"));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0]?.[0]).toEqual({ extension_ids: [assetA.id] });
+    unmount();
+
+    // Edit form starting with extensions disabled keeps selector hidden; enabling & submitting sends only allow_extensions=true
+    const onFreeSubmit = vi.fn(
+      async (_values: ProfileCreateRequest | ProfileUpdateRequest) => undefined,
+    );
+    renderForm({
+      mode: "edit",
+      initial: profile({ allow_extensions: false, extension_ids: [] }),
+      stub,
+      onSubmit: onFreeSubmit,
+    });
+    const allowBox = await screen.findByRole("checkbox", { name: en.formAllowExtensions });
+    expect(allowBox).not.toBeChecked();
+    expect(screen.queryByTestId("profile-form-extensions-selector")).not.toBeInTheDocument();
+    fireEvent.click(allowBox);
+    fireEvent.click(screen.getByTestId("profile-form-submit"));
+    await waitFor(() => expect(onFreeSubmit).toHaveBeenCalledTimes(1));
+    expect(onFreeSubmit.mock.calls[0]?.[0]).toEqual({ allow_extensions: true });
   });
 });

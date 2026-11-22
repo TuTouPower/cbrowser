@@ -47,6 +47,11 @@ export type RuntimeAlertsResponse = Schemas["RuntimeAlertsResponse"];
 export type FontSetInfo = Schemas["FontSetInfo"];
 export type FontSetIntegrity = Schemas["FontSetIntegrity"];
 export type FontSetListResponse = Schemas["FontSetListResponse"];
+export type ExtensionIntegrity = Schemas["ExtensionIntegrity"];
+export type ExtensionAssetResponse = Schemas["ExtensionAssetResponse"];
+export type ExtensionAssetListResponse = Schemas["ExtensionAssetListResponse"];
+export type ExtensionUsedByEntry = Schemas["ExtensionUsedByEntry"];
+export type ExtensionUsedByResponse = Schemas["ExtensionUsedByResponse"];
 export type UserSettingsResponse = Schemas["UserSettingsResponse"];
 export type UserSettingsUpdateRequest = Schemas["UserSettingsUpdateRequest"];
 
@@ -70,5 +75,6 @@ export const DEFAULT_PROFILE_CREATE_VALUES: Omit<ProfileCreateRequest, "name"> =
   locale: "en-US",
   color_scheme: "light",
   include_cjk_fonts: false,
-  extension_paths: [],
+  allow_extensions: false,
+  extension_ids: [],
 };

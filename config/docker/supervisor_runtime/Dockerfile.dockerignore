@@ -6,6 +6,8 @@
 !src/backend/cbrowser/services/__init__.py
 !src/backend/cbrowser/services/tunnel_registry.py
 !src/backend/cbrowser/domain/*.py
+!src/backend/cbrowser/extensions/
+!src/backend/cbrowser/extensions/*.py
 !src/backend/cbrowser/font_sets/*.py
 !src/backend/cbrowser/udp_mux.py
 !src/backend/cbrowser/preview.py

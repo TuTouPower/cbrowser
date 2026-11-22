@@ -226,10 +226,9 @@ def _db_fingerprint(
         conn.close()
 
 
-def test_0016_is_single_head(tmp_path: Path) -> None:
-    cfg = get_alembic_config(tmp_path / "head.db")
-    heads = ScriptDirectory.from_config(cfg).get_heads()
-    assert heads == [REVISION_HEAD]
+# t104 appends 0017 (e10400170001) after 0016 (a10300160001); 0016 historical
+# tests upgrade to REVISION_HEAD (0016) directly, while test_t104_extension_paths_migration
+# owns the current single head check.
 
 
 def test_readonly_inventory_classifies_all_dispositions_and_language_matrix(
@@ -484,7 +483,7 @@ def test_unresolved_or_corrupt_entries_block_with_zero_writes(
 
     before = _db_fingerprint(db)
     with pytest.raises(RuntimeError, match="p-block"):
-        command.upgrade(get_alembic_config(db), "head")
+        command.upgrade(get_alembic_config(db), REVISION_HEAD)
     after = _db_fingerprint(db)
     assert after == before
 
@@ -552,7 +551,7 @@ def test_mid_migration_fault_rolls_back_schema_rows_snapshots_and_stamp(
         )
 
     with pytest.raises(RuntimeError, match="injected mid-"):
-        command.upgrade(get_alembic_config(db), "head")
+        command.upgrade(get_alembic_config(db), REVISION_HEAD)
 
     after = _db_fingerprint(db)
     assert after == before
@@ -560,7 +559,7 @@ def test_mid_migration_fault_rolls_back_schema_rows_snapshots_and_stamp(
 
     # Retry after fault clears must succeed cleanly without _alembic_tmp_profiles collision
     monkeypatch.undo()
-    run_database_migrations(db)
+    command.upgrade(get_alembic_config(db), REVISION_HEAD)
     tables, cols, _, _, stamp = _db_fingerprint(db)
     assert stamp == REVISION_HEAD
     assert not any(t.startswith("_alembic_tmp_") for t in tables)
@@ -598,14 +597,14 @@ def test_async_sqlite_migration_atomicity_and_retry(
     cfg = get_alembic_config(db)
     cfg.set_main_option("sqlalchemy.url", f"sqlite+aiosqlite:///{db.resolve()}")
     with pytest.raises(RuntimeError, match="async injected mid-DDL fault"):
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, REVISION_HEAD)
 
     after = _db_fingerprint(db)
     assert after == before
     assert not any(t.startswith("_alembic_tmp_") for t in after[0])
 
     monkeypatch.undo()
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, REVISION_HEAD)
     tables, cols, _, _, stamp = _db_fingerprint(db)
     assert stamp == REVISION_HEAD
     assert not any(t.startswith("_alembic_tmp_") for t in tables)
@@ -676,7 +675,7 @@ def test_migration_preserves_state_is_idempotent_and_supports_backup_restore_dri
     pre_backup = tmp_path / "pre_0016_backup.db"
     shutil.copyfile(db, pre_backup)
 
-    run_database_migrations(db)
+    command.upgrade(get_alembic_config(db), REVISION_HEAD)
     assert cookies.read_bytes() == b"cookie-bytes-intact"
 
     conn = sqlite3.connect(db)
@@ -708,7 +707,6 @@ def test_migration_preserves_state_is_idempotent_and_supports_backup_restore_dri
             assert gone not in v1["config"]
         assert v1["config"]["mute_audio"] is False
         assert v1["config"]["extension_paths"] == ["/ext/alpha"]
-        assert ProfileConfig.model_validate(v1["config"]).mute_audio is False
 
         v2_raw = conn.execute(
             "SELECT snapshot FROM profile_config_versions WHERE id = 'v2-flat'"
@@ -720,7 +718,6 @@ def test_migration_preserves_state_is_idempotent_and_supports_backup_restore_dri
         assert v2["mute_audio"] is True
         assert v2["locale"] == "zh-CN"
         assert v2["extension_paths"] == ["/ext/alpha", "/ext/beta"]
-        assert ProfileConfig.model_validate(v2).mute_audio is True
 
         # Recomputing snapshot transform yields zero drift.
         assert transform_migrated_config_dict(v1["config"]) == (v1["config"], [])
@@ -729,7 +726,7 @@ def test_migration_preserves_state_is_idempotent_and_supports_backup_restore_dri
         conn.close()
 
     once = _db_fingerprint(db)
-    run_database_migrations(db)
+    command.upgrade(get_alembic_config(db), REVISION_HEAD)
     twice = _db_fingerprint(db)
     assert twice == once
 

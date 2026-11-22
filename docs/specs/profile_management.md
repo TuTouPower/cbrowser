@@ -1,7 +1,7 @@
 ---
 slug: profile_management
 status: active
-tasks: [baseline, t075, t076, t077, t078, t079, t090, t094, t095, t098, t099, t101, t103]
+tasks: [baseline, t075, t076, t077, t078, t079, t090, t094, t095, t098, t099, t101, t103, t104]
 ---
 # 需求规范：Profile 管理与外部标签页
 
@@ -39,9 +39,11 @@ tasks: [baseline, t075, t076, t077, t078, t079, t090, t094, t095, t098, t099, t1
 - 列表与卡片共用操作定义：停止与删除独立呈现，删除固定最右且 danger 样式，运行行删除表示「先停止再删除」；环境管理页头不再显示运行数量统计，表格不再有最后活跃列（相对时间仅卡片保留）。
 - 单项与批量删除共用居中模态：确认前不发请求，确认目标集合在打开时冻结（翻页/筛选不漂移），进度与逐项结果在弹窗内呈现，失败项保留阶段、错误与重试入口；成功项从选择中移除，失败项保留。批量不再逐个调用单删接口。
 
-## 扩展路径校验与 PATCH 三态（t021，t103 修订）
+## 扩展权限与受管扩展资产目录（t104 承接）
 
-- 通用 `launch_args` 与六个无效开关已由 t103 退役删除（创建/更新提交任意已删除键一律 422 零写入）。`extension_paths` 保留当前严格校验（条数、单条长度、安全规则拒绝）与 PATCH 三态语义（缺失=不变、显式 `null`=清空为 `[]`、给出列表=整体替换）；受管扩展资产接管留待 `t104`（`p165`）承接。
+- 通用 `launch_args` 与六个无效开关已由 t103 退役删除；`extension_paths` 已由 `t104` 彻底移除并在 POST/PATCH 边界返回 422 零写入。Profile 配置改为 `allow_extensions: bool = False`（默认关闭）与有序列表 `extension_ids: list[str] = []`（均属运行配置，触发新 `ProfileConfigVersion`）。`ProfileUpdateRequest` 拒绝 `allow_extensions: null`；`extension_ids` 缺省保持不变、列表整体替换（去重严格拒绝、未知/未认证资产 422）。
+- 受管扩展资产库接口 `/api/v1/extensions`（CRUD 与图标获取、`POST /api/v1/extensions` 原始内容流式上传，`DELETE` 在被当前 Profile 或活跃/绑定运行版本引用时返回 `409 extension_in_use`）：解析 `.zip` 与 `.crx`（CRX2/CRX3），校验 `manifest.json`（含 `__MSG_*__` 本地化字段与图标解析），按 CRX3 `SignedHeaderData.crx_id` 匹配签发公钥并回写 `manifest.json["key"]`，对确定身份导出内容寻址 `asset_id` 与固定 Chromium 扩展 ID；损坏包、越界/符号链接、缺失或不合法 `manifest.json`、无法确定稳定 ID 的无 `key` `.zip` 一律 422 拒绝。
+- 四态语义：`allow_extensions=false` 时保持 `--disable-extensions` 且零挂载/零加载路径（切回关闭态同时停用历史上在自由模式装过的扩展）；`allow_extensions=true` 且 `extension_ids=[]` 为自由模式（移除 `--disable-extensions` 且不传加载参数，Chromium `146.0.7680.177.3` 实测仅「开启开发者模式 -> Load unpacked（经 GTK3 选择容器内持久路径如 `/exchange/downloads` 或 `/exchange/uploads`）」可用并跨重启持久）；`allow_extensions=true` 且非空有序 `extension_ids` 为受管模式（按选定顺序 `--load-extension=...` + `--disable-extensions-except=...` 并发加载，同时拒绝未纳入白名单的自由模式扩展）；受管资产挂载目录缺失或 SHA-256 不一致在启动前 fail-closed（`extension_unavailable`）。
 
 ## 页面独立选择
 

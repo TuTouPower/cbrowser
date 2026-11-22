@@ -39,6 +39,7 @@ import {
   timezoneForProxy,
 } from "./profile_locale";
 import { diffProfileValues } from "./profile_field_diff";
+import { ProfileExtensionsSelector } from "./ProfileExtensionsSelector";
 import { TimezoneCombobox } from "./TimezoneCombobox";
 
 export type ProfileFormValues = ProfileCreateRequest;
@@ -93,7 +94,8 @@ function toFormValues(initial?: ProfileResponse): ProfileFormValues {
     color_scheme: normalizeColorScheme(initial.color_scheme),
     include_cjk_fonts: initial.include_cjk_fonts,
     fingerprint_platform: normalizePlatform(initial.fingerprint_platform),
-    extension_paths: initial.extension_paths ?? [],
+    allow_extensions: initial.allow_extensions ?? false,
+    extension_ids: initial.extension_ids ?? [],
     set_google_default: initial.set_google_default,
     capture_preview: initial.capture_preview,
     restore_session: initial.restore_session,
@@ -807,24 +809,22 @@ export function ProfileForm({
               />
             ))}
           </div>
-          <Row
-            label={t("formExtensionPaths")}
-            hint={<FieldHelp field={t("formExtensionPaths")} text={t("formExtensionPathsHelp")} />}
-          >
-            <Input
-              aria-label={t("formExtensionPaths")}
-              value={(values.extension_paths ?? []).join(", ")}
-              onChange={(event) =>
-                setField(
-                  "extension_paths",
-                  event.target.value
-                    .split(",")
-                    .map((item) => item.trim())
-                    .filter(Boolean),
-                )
-              }
-            />
-          </Row>
+          <div className="flex flex-col gap-md border-t border-outline-subtle pt-md">
+            <div data-testid="profile-form-allow-extensions">
+              <BoolRow
+                label={t("formAllowExtensions")}
+                help={t("formAllowExtensionsHelp")}
+                checked={Boolean(values.allow_extensions)}
+                onChange={(checked) => setField("allow_extensions", checked)}
+              />
+            </div>
+            {values.allow_extensions ? (
+              <ProfileExtensionsSelector
+                extensionIds={values.extension_ids ?? []}
+                onChange={(nextIds) => setField("extension_ids", nextIds)}
+              />
+            ) : null}
+          </div>
         </div>
       </details>
 

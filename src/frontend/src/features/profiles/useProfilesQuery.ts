@@ -38,6 +38,9 @@ import type {
   ProxyCreateRequest,
   ProxyUpdateRequest,
   FontSetListResponse,
+  ExtensionAssetListResponse,
+  ExtensionAssetResponse,
+  ExtensionUsedByResponse,
 } from "../../shared/api/types";
 import { ProfileEventsClient } from "../../shared/api/sse";
 
@@ -311,6 +314,7 @@ export function useCreateProfileMutation(
         client.profiles.create(input, actionKey),
       onSuccess: () => {
         invalidateProfileLists(queryClient);
+        queryClient.invalidateQueries({ queryKey: extensionKeys.all });
       },
     },
     keyOptions,
@@ -335,6 +339,7 @@ export function useUpdateProfileMutation(
       });
       queryClient.setQueryData(profileKeys.detail(input.id), data);
       invalidateProfileLists(queryClient);
+      queryClient.invalidateQueries({ queryKey: extensionKeys.all });
     },
   });
 }
@@ -348,6 +353,7 @@ export function useDeleteProfileMutation(
       client.profiles.delete(input, actionKey),
     onSuccess: () => {
       invalidateProfileLists(queryClient);
+      queryClient.invalidateQueries({ queryKey: extensionKeys.all });
     },
   });
 }
@@ -396,6 +402,7 @@ export function useDeletionBatchQuery(
   useEffect(() => {
     if (doneIds) {
       invalidateProfileLists(queryClient);
+      queryClient.invalidateQueries({ queryKey: extensionKeys.all });
     }
   }, [doneIds, queryClient]);
   return result;
@@ -431,6 +438,7 @@ export function useDuplicateProfileMutation(
       ),
     onSuccess: () => {
       invalidateProfileLists(queryClient);
+      queryClient.invalidateQueries({ queryKey: extensionKeys.all });
     },
   });
 }
@@ -1387,6 +1395,12 @@ export const fontSetKeys = {
   lists: () => [...fontSetKeys.all, "list"] as const,
 };
 
+export const extensionKeys = {
+  all: ["extensions"] as const,
+  lists: () => [...extensionKeys.all, "list"] as const,
+  usedBy: (assetId: string) => [...extensionKeys.all, "usedBy", assetId] as const,
+};
+
 export function useGroupsQuery(
   client: ApiClient = defaultApiClient,
 ): UseQueryResult<GroupResponse[], Error> {
@@ -1456,6 +1470,54 @@ export function useFontSetsQuery(
   return useQuery({
     queryKey: fontSetKeys.lists(),
     queryFn: () => client.fontSets.list(),
+  });
+}
+
+export function useExtensionsQuery(
+  client: ApiClient = defaultApiClient,
+  options: { enabled?: boolean } = {},
+): UseQueryResult<ExtensionAssetListResponse, Error> {
+  return useQuery({
+    queryKey: extensionKeys.lists(),
+    queryFn: () => client.extensions.list(),
+    enabled: options.enabled ?? true,
+  });
+}
+
+export function useExtensionUsedByQuery(
+  assetId: string | null | undefined,
+  client: ApiClient = defaultApiClient,
+  options: { enabled?: boolean } = {},
+): UseQueryResult<ExtensionUsedByResponse, Error> {
+  return useQuery({
+    queryKey: extensionKeys.usedBy(assetId || ""),
+    queryFn: () => client.extensions.getUsedBy(assetId!),
+    enabled: Boolean(assetId) && (options.enabled ?? true),
+  });
+}
+
+export function useUploadExtensionMutation(
+  client: ApiClient = defaultApiClient,
+): UseMutationResult<ExtensionAssetResponse, Error, File> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (file) => client.extensions.upload(file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: extensionKeys.lists() });
+    },
+  });
+}
+
+export function useDeleteExtensionMutation(
+  client: ApiClient = defaultApiClient,
+): UseMutationResult<void, Error, string> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (assetId) => client.extensions.remove(assetId),
+    onSuccess: (_data, assetId) => {
+      queryClient.invalidateQueries({ queryKey: extensionKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: extensionKeys.usedBy(assetId) });
+    },
   });
 }
 

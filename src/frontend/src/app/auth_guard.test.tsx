@@ -22,7 +22,8 @@ const PROFILE: ProfileResponse = {
   include_cjk_fonts: false,
   geoip: false,
   clipboard_sync: false,
-  extension_paths: [],
+  allow_extensions: false,
+  extension_ids: [],
   set_google_default: true,
   capture_preview: true,
   restore_session: true,
@@ -124,6 +125,9 @@ function mockApi(authenticated: boolean): MockedApi {
         items: [],
         default_font_set_id: { windows: null, macos: null },
       })),
+    },
+    extensions: {
+      list: vi.fn(async () => ({ items: [] })),
     },
   } as unknown as ApiClient;
 

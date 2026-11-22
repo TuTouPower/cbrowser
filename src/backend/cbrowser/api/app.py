@@ -34,6 +34,7 @@ from cbrowser.api.v1.control_router import (
     get_control_service,
     get_optional_control_service,
 )
+from cbrowser.api.v1.extensions_router import extensions_router
 from cbrowser.api.v1.font_sets_router import font_set_router
 from cbrowser.api.v1.router import get_profile_service, v1_router
 from cbrowser.network_config import DEFAULT_HTTPS_PORT, derive_origin_whitelist
@@ -362,6 +363,10 @@ def create_app(
 
         adopt_task.add_done_callback(_log_adoption_failure)
 
+        extension_catalog = service.extension_catalog()
+        app.state.extension_catalog = extension_catalog
+        await extension_catalog.adopt_existing()
+
         # t094: egress probes run in-process through an explicit proxy; no
         # container sandbox or Supervisor RPC is involved any more. t096:
         # the runner's GeoIpLookup is injected from the coordinator's
@@ -660,6 +665,7 @@ def create_app(
         )
 
     app.include_router(v1_router)
+    app.include_router(extensions_router)
     app.include_router(font_set_router)
     app.include_router(artifact_router)
     app.include_router(preview_router)

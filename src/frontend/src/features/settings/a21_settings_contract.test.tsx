@@ -24,6 +24,7 @@ function makeClient(fontSetsReject = false) {
   const client = {
     request: vi.fn(async () => ({})),
     fontSets: { list: fontSetsList },
+    extensions: { list: vi.fn(async () => ({ items: [] })) },
     health: { check: vi.fn(async () => undefined) },
   } as unknown as ApiClient;
   return { client, fontSetsList };

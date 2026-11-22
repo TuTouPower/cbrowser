@@ -37,6 +37,8 @@ project_configured
 
 - t095 进度/并发/实时矩阵（本机已验）：`tests/unit/test_t095_probe_job_progress.py` 覆盖全失败进度推进到 N、进度只取作业读模型、观测历史与 TTL、并发上限内并行且总耗时低于串行基线、超限排队、慢成员不阻塞、多作业结果隔离；前端 `ProxyListPage.test.tsx` 覆盖失败计入进度的文案与进度事件驱动的列表失效，`useProfilesQuery.test.tsx` 覆盖 SSE 事件→列表重取。受配额并发上限与单成员超时用注入桩计时验证，真实 88 代理规模与公网出口可达性属 [deploy] AC-006，本机不冒充。
 
+- t104 扩展与 Passkey 矩阵（门禁已验 + 隔离六镜像真实容器 `[deploy]` AC-004/AC-005 已验）：`tests/unit/test_t104_extensions_manifest.py`（CRX3 选钥/无 key 拒绝/损坏与穿越拒绝/ID 连续性）、`tests/unit/test_t104_extension_paths_migration.py`（0017 全库平铺+包装快照盘点、缺失/多义/无 key 阻塞零写入、幂等升级与连续性）、`tests/unit/test_t104_supervisor_and_runner.py`（`:ro` 子路径挂载、Stream 零挂载、tamper fail-closed、优雅 stop(timeout=8)、四态参数、restore_point 扩展集往返）、`tests/integration/test_t104_extensions_api.py`（受管扩展 CRUD、409 引用/绑定版本删除保护、遗留 `extension_paths` 422 拒绝）、前端 `ProfileForm.test.tsx` / `SettingsPage.test.tsx`；真实重建六镜像（含 `146.0.7680.177.3`）容器端到端在 `.scratch/t104_deploy_verify/`（`verify_ac004.py`、`verify_ac005.py`、`verify_migration_and_restore.py`）覆盖默认关态、双受管并发、Free 模式 GTK3 Load unpacked + 优雅停机重启持久化 + 切受管拒载 + 切关停用、双 Profile/Stream 隔离、0016→0017 ID/存储连续性与 restore_point CLI 往返，以及官方 Bitwarden CRX3（`2026.11.0`）通过认证代理同步 `ghcr.io/dani-garcia/vaultwarden:alpine`、Policy Agent 零旁路阻断及 WebAuthn `navigator.credentials.create/get` Passkey 闭环与 UI/Caddy 冒烟。
+
 ## doctor_cmd
 
 环境前置检查：契约测试可成功收集；另需 `md_kx` 在 PATH。预览帧的严格 JPEG 校验（`jpeginfo --check -`，d040）由门禁唯一入口 `scripts/run_gates.sh` 在环境准备阶段确定性提供：复用 PATH 内或 `.scratch/jpeginfo/` 缓存的二进制，并按 d040 契约实测（合法帧退出 0、补回 EOI 的截断帧非零），不满足即 fail closed。不做系统安装、不联网、不在 doctor 阶段人工提供。

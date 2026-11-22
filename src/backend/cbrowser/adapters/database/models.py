@@ -221,7 +221,12 @@ class ProfileModel(Base):
     include_cjk_fonts: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="1", nullable=False
     )
-    extension_paths: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    allow_extensions: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False
+    )
+    extension_ids: Mapped[str] = mapped_column(
+        Text, default="[]", server_default="[]", nullable=False
+    )
     set_google_default: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False
     )
@@ -615,4 +620,36 @@ class FontSetAssetModel(Base):
     )
     updated_at: Mapped[str] = mapped_column(
         String(64), default=utc_now_iso, onupdate=utc_now_iso, nullable=False
+    )
+
+
+class ExtensionAssetModel(Base):
+    """t104: durable catalog record for one managed Chromium extension package."""
+
+    __tablename__ = "extension_assets"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    chromium_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    version: Mapped[str] = mapped_column(String(64), nullable=False)
+    manifest_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    package_format: Mapped[str] = mapped_column(String(16), nullable=False)
+    identity_source: Mapped[str] = mapped_column(String(32), nullable=False)
+    manifest_key_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    archive_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    icon_relpath: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    file_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_bytes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    integrity: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    state: Mapped[str] = mapped_column(String(16), default="verified", nullable=False)
+    created_at: Mapped[str] = mapped_column(
+        String(64), default=utc_now_iso, nullable=False
+    )
+    updated_at: Mapped[str] = mapped_column(
+        String(64), default=utc_now_iso, onupdate=utc_now_iso, nullable=False
+    )
+
+    __table_args__ = (
+        Index("idx_extension_assets_chromium_id", "chromium_id"),
     )

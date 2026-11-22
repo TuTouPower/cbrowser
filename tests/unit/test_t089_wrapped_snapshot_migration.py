@@ -22,8 +22,8 @@ REVISION_0013 = "d75a0013f001"
 REVISION_LEGACY_HEAD = "d7e3a91f4c62"
 REVISION_0014_COMPENSATION = "e89a0014c001"
 REVISION_0015_PROBE = "f1a2b3c4d5e6"
-# t103 appends 0016 (profile option cleanup + mute_audio) after t094.
-REVISION_HEAD = "a10300160001"
+# t104 appends 0017 (managed extensions) after t103 (0016).
+REVISION_HEAD = "e10400170001"
 
 WIN_SET = "1" * 64
 MAC_SET = "2" * 64

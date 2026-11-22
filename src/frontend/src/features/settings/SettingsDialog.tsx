@@ -5,6 +5,7 @@ import {
   LogOut,
   Network,
   Palette,
+  Puzzle,
   ShieldCheck,
   Type,
 } from "lucide-react";
@@ -13,6 +14,7 @@ import { useTheme, type ThemePreference } from "../../theme";
 import { useAuth } from "../auth/useAuth";
 import { useApiClient } from "../../shared/api/client_context";
 import { Banner, Button, Dialog, Select, StatusBadge } from "../../shared/ui";
+import { ExtensionLibrarySection } from "../extensions/ExtensionLibrarySection";
 import { useFontSetsQuery } from "../profiles/useProfilesQuery";
 import { formatFontSetDisplayName } from "./SettingsPage";
 
@@ -284,6 +286,13 @@ export function SettingsDialog({
                 })}
               </div>
             )}
+          </Block>
+
+          <Block
+            icon={<Puzzle aria-hidden="true" className="size-(--component-icon-lg-size)" />}
+            title={t("extensionsLibraryTitle")}
+          >
+            <ExtensionLibrarySection />
           </Block>
         </div>
       </div>

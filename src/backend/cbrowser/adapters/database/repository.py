@@ -10,6 +10,7 @@ from typing import Any
 
 from cbrowser.adapters.database.models import (
     AuditEventModel,
+    ExtensionAssetModel,
     ProfileConfigVersionModel,
     ProfileDeletionBatchMemberModel,
     ProfileDeletionModel,
@@ -58,6 +59,35 @@ from cbrowser.domain.runtime_policy import (
 from sqlalchemy import func, or_, select, text, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+
+class MissingExtensionReferenceError(ValueError):
+    """Raised inside a write transaction when a referenced extension asset is missing or unverified."""
+
+    def __init__(self, asset_id: str) -> None:
+        super().__init__(
+            f"Managed extension asset {asset_id} does not exist or is not verified"
+        )
+        self.asset_id = asset_id
+
+
+async def _assert_verified_extensions_in_tx(
+    session: AsyncSession, extension_ids: list[str]
+) -> None:
+    if not extension_ids:
+        return
+    unique_ids = list(dict.fromkeys(extension_ids))
+    rows = (
+        await session.execute(
+            select(ExtensionAssetModel.id, ExtensionAssetModel.state).where(
+                ExtensionAssetModel.id.in_(unique_ids)
+            )
+        )
+    ).all()
+    by_id = {str(aid): str(state) for aid, state in rows}
+    for asset_id in unique_ids:
+        if by_id.get(asset_id) != "verified":
+            raise MissingExtensionReferenceError(asset_id)
 
 
 class IdempotencyConflictError(Exception):
@@ -242,6 +272,8 @@ class ProfileRepository:
                         )
                     ).scalar_one()
                 )
+                await _assert_verified_extensions_in_tx(session, config.extension_ids)
+
                 p_model = ProfileModel(
                     id=pid,
                     display_number=next_number,
@@ -259,7 +291,8 @@ class ProfileRepository:
                     fingerprint_platform=config.fingerprint_platform,
                     font_set_id=config.font_set_id,
                     include_cjk_fonts=config.include_cjk_fonts,
-                    extension_paths=json.dumps(config.extension_paths),
+                    allow_extensions=config.allow_extensions,
+                    extension_ids=json.dumps(config.extension_ids),
                     set_google_default=config.set_google_default,
                     capture_preview=config.capture_preview,
                     restore_session=config.restore_session,
@@ -722,8 +755,9 @@ class ProfileRepository:
                     "fingerprint_platform": p_model.fingerprint_platform,
                     "font_set_id": p_model.font_set_id,
                     "include_cjk_fonts": p_model.include_cjk_fonts,
-                    "extension_paths": json.loads(p_model.extension_paths)
-                    if p_model.extension_paths
+                    "allow_extensions": bool(p_model.allow_extensions),
+                    "extension_ids": json.loads(p_model.extension_ids)
+                    if p_model.extension_ids
                     else [],
                     "set_google_default": p_model.set_google_default,
                     "capture_preview": p_model.capture_preview,
@@ -737,6 +771,14 @@ class ProfileRepository:
                 old_cfg = ProfileConfig(**current_dict)
                 current_dict.update(patch_dict)
                 merged_cfg = ProfileConfig(**current_dict)
+
+                if merged_cfg.extension_ids and (
+                    "extension_ids" in patch_dict
+                    or patch_dict.get("allow_extensions") is True
+                ):
+                    await _assert_verified_extensions_in_tx(
+                        session, merged_cfg.extension_ids
+                    )
 
                 runtime_changed = any(
                     getattr(old_cfg, key) != getattr(merged_cfg, key)
@@ -765,7 +807,8 @@ class ProfileRepository:
                 p_model.fingerprint_platform = merged_cfg.fingerprint_platform
                 p_model.font_set_id = merged_cfg.font_set_id
                 p_model.include_cjk_fonts = merged_cfg.include_cjk_fonts
-                p_model.extension_paths = json.dumps(merged_cfg.extension_paths)
+                p_model.allow_extensions = merged_cfg.allow_extensions
+                p_model.extension_ids = json.dumps(merged_cfg.extension_ids)
                 p_model.set_google_default = merged_cfg.set_google_default
                 if old_cfg.capture_preview != merged_cfg.capture_preview:
                     p_model.capture_preview_epoch = (
@@ -2834,7 +2877,8 @@ class ProfileRepository:
             fingerprint_platform=m.fingerprint_platform,  # type: ignore
             font_set_id=m.font_set_id,  # type: ignore
             include_cjk_fonts=m.include_cjk_fonts,
-            extension_paths=json.loads(m.extension_paths) if m.extension_paths else [],
+            allow_extensions=bool(m.allow_extensions),
+            extension_ids=json.loads(m.extension_ids) if m.extension_ids else [],
             set_google_default=m.set_google_default,
             capture_preview=m.capture_preview,
             restore_session=m.restore_session,

@@ -31,6 +31,9 @@ import type {
   ProfileBatchJobRequest,
   RuntimeAlertsResponse,
   FontSetListResponse,
+  ExtensionAssetListResponse,
+  ExtensionAssetResponse,
+  ExtensionUsedByResponse,
   UserSettingsResponse,
   UserSettingsUpdateRequest,
 } from "./types";
@@ -719,6 +722,46 @@ export class ApiClient {
   readonly fontSets = {
     list: async (): Promise<FontSetListResponse> => {
       return this.request<FontSetListResponse>("/api/v1/font-sets");
+    },
+  };
+
+  readonly extensions = {
+    list: async (): Promise<ExtensionAssetListResponse> => {
+      return this.request<ExtensionAssetListResponse>("/api/v1/extensions");
+    },
+    upload: async (
+      file: File,
+      idempotencyKey?: string,
+    ): Promise<ExtensionAssetResponse> => {
+      return this.request<ExtensionAssetResponse>(
+        `/api/v1/extensions?filename=${encodeURIComponent(file.name)}`,
+        {
+          method: "POST",
+          body: file,
+          headers: {
+            "Content-Type": file.type || "application/octet-stream",
+            ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+          },
+        },
+        this.uploadTimeoutMs,
+      );
+    },
+    getUsedBy: async (assetId: string): Promise<ExtensionUsedByResponse> => {
+      return this.request<ExtensionUsedByResponse>(
+        `/api/v1/extensions/${encodeURIComponent(assetId)}/used-by`,
+      );
+    },
+    remove: async (
+      assetId: string,
+      idempotencyKey?: string,
+    ): Promise<void> => {
+      await this.request<void>(
+        `/api/v1/extensions/${encodeURIComponent(assetId)}`,
+        {
+          method: "DELETE",
+          headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+        },
+      );
     },
   };
 

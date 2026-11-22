@@ -180,6 +180,50 @@ class UserSettingsUpdateRequest(BaseModel):
     locale: Literal["en", "zh"] | None = None
 
 
+class ExtensionIntegrity(BaseModel):
+    ok: bool
+    problems: list[str] = Field(default_factory=list)
+
+
+class ExtensionAssetResponse(BaseModel):
+    id: str
+    chromium_id: str
+    name: str
+    version: str
+    manifest_version: int
+    description: str | None = None
+    package_format: str
+    identity_source: str
+    manifest_key_sha256: str
+    archive_sha256: str
+    has_icon: bool
+    icon_url: str | None = None
+    file_count: int
+    total_bytes: int
+    integrity: ExtensionIntegrity
+    state: str
+    used_by_count: int = 0
+    created_at: str
+    updated_at: str
+
+
+class ExtensionAssetListResponse(BaseModel):
+    items: list[ExtensionAssetResponse] = Field(default_factory=list)
+
+
+class ExtensionUsedByEntry(BaseModel):
+    profile_id: str
+    profile_name: str
+    display_number: int
+    kind: Literal["current", "bound", "both"]
+    observed_state: str | None = None
+
+
+class ExtensionUsedByResponse(BaseModel):
+    asset_id: str
+    entries: list[ExtensionUsedByEntry] = Field(default_factory=list)
+
+
 class ProxyCreateRequest(BaseModel):
     """Link-only entry (t052): the proxy link is the single source of
     truth for the endpoint; ``name`` defaults to ``host:port``."""
@@ -246,6 +290,25 @@ class ProxyUpdateRequest(BaseModel):
         return parse_proxy_link(self.proxy_url)
 
 
+def _validate_extension_id_list(v: Any) -> list[str]:
+    from cbrowser.extensions.manifest import EXTENSION_ASSET_ID_RE
+
+    if not isinstance(v, list):
+        raise ValueError("extension_ids must be a list of extension asset ids")
+    if len(v) > 50:
+        raise ValueError("At most 50 managed extensions can be attached per Profile")
+    seen: set[str] = set()
+    cleaned: list[str] = []
+    for item in v:
+        if not isinstance(item, str) or not EXTENSION_ASSET_ID_RE.fullmatch(item):
+            raise ValueError(f"Invalid managed extension id: {item!r}")
+        if item in seen:
+            raise ValueError(f"Duplicate extension_ids entry: {item}")
+        seen.add(item)
+        cleaned.append(item)
+    return cleaned
+
+
 class ProfileConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -270,7 +333,8 @@ class ProfileConfig(BaseModel):
     # Independent of locale (t075): whether the platform font set's
     # Chinese fonts are exposed to this Profile.
     include_cjk_fonts: bool = True
-    extension_paths: list[str] = Field(default_factory=list)
+    allow_extensions: bool = False
+    extension_ids: list[str] = Field(default_factory=list)
     set_google_default: bool = True
     capture_preview: bool = True
     restore_session: bool = True
@@ -295,11 +359,16 @@ class ProfileConfig(BaseModel):
             raise ValueError("Profile name cannot be blank")
         return v.strip()
 
-    @field_validator("extension_paths", mode="before")
+    @field_validator("extension_ids", mode="before")
     @classmethod
     def coerce_null_lists(cls, v: Any) -> Any:
         # PATCH tri-state: an explicit null list clears the stored value.
         return [] if v is None else v
+
+    @field_validator("extension_ids")
+    @classmethod
+    def validate_extension_ids(cls, v: Any) -> list[str]:
+        return _validate_extension_id_list(v)
 
 
 class Profile(BaseModel):
@@ -485,7 +554,8 @@ class ProfileCreateRequest(BaseModel):
     fingerprint_platform: FingerprintPlatform = "windows"
     # None = derive from locale at creation (zh-CN on, otherwise off).
     include_cjk_fonts: bool | None = None
-    extension_paths: list[str] = Field(default_factory=list)
+    allow_extensions: bool = False
+    extension_ids: list[str] = Field(default_factory=list)
     set_google_default: bool = True
     capture_preview: bool = True
     restore_session: bool = True
@@ -509,6 +579,11 @@ class ProfileCreateRequest(BaseModel):
         if not v or not v.strip():
             raise ValueError("name cannot be blank")
         return v.strip()
+
+    @field_validator("extension_ids")
+    @classmethod
+    def validate_extension_ids(cls, v: Any) -> list[str]:
+        return _validate_extension_id_list(v)
 
 
 class ProfileDuplicateRequest(BaseModel):
@@ -538,7 +613,8 @@ class ProfileUpdateRequest(BaseModel):
     color_scheme: Literal["light", "dark"] | None = None
     fingerprint_platform: FingerprintPlatform | None = None
     include_cjk_fonts: bool | None = None
-    extension_paths: list[str] | None = None
+    allow_extensions: bool | None = None
+    extension_ids: list[str] | None = None
     set_google_default: bool | None = None
     capture_preview: bool | None = None
     restore_session: bool | None = None
@@ -566,6 +642,20 @@ class ProfileUpdateRequest(BaseModel):
         if value is None:
             raise ValueError("dimensions cannot be null")
         return value
+
+    @field_validator("allow_extensions", mode="before")
+    @classmethod
+    def reject_null_allow_extensions(cls, value: object) -> object:
+        if value is None:
+            raise ValueError("allow_extensions cannot be null")
+        return value
+
+    @field_validator("extension_ids")
+    @classmethod
+    def validate_extension_ids(cls, v: Any) -> list[str] | None:
+        if v is None:
+            return None
+        return _validate_extension_id_list(v)
 
     @field_validator("timezone")
     @classmethod
@@ -598,7 +688,8 @@ class ProfileResponse(BaseModel):
     fingerprint_platform: str = "windows"
     font_set_id: str | None = None
     include_cjk_fonts: bool = True
-    extension_paths: list[str] = Field(default_factory=list)
+    allow_extensions: bool = False
+    extension_ids: list[str] = Field(default_factory=list)
     set_google_default: bool = True
     capture_preview: bool = True
     restore_session: bool = True
@@ -633,7 +724,8 @@ class ProfileResponse(BaseModel):
             fingerprint_platform=cfg.fingerprint_platform,
             font_set_id=cfg.font_set_id,
             include_cjk_fonts=cfg.include_cjk_fonts,
-            extension_paths=cfg.extension_paths,
+            allow_extensions=cfg.allow_extensions,
+            extension_ids=cfg.extension_ids,
             set_google_default=cfg.set_google_default,
             capture_preview=cfg.capture_preview,
             restore_session=cfg.restore_session,

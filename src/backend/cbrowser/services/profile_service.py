@@ -16,8 +16,10 @@ from pathlib import Path
 from typing import Any
 
 from cbrowser.adapters.database.db_errors import classify_dbapi_error
+from cbrowser.adapters.database.extension_repository import ExtensionAssetRepository
 from cbrowser.adapters.database.font_repository import FontSetRepository
 from cbrowser.adapters.database.repository import (
+    MissingExtensionReferenceError,
     ProfileRepository,
 )
 from cbrowser.domain.egress_observation import (
@@ -51,6 +53,10 @@ from cbrowser.domain.models import (
 )
 from cbrowser.domain.proxy_endpoint import ProxyEndpoint
 from cbrowser.services.egress_probe import EgressProbeRunner
+from cbrowser.services.extension_catalog import (
+    ExtensionBindingError,
+    ExtensionCatalogService,
+)
 from cbrowser.services.font_set_catalog import FontSetCatalogService
 from cbrowser.shared.egress import EgressProbeError
 from cbrowser.shared.profile_locks import ProfileLockRegistry
@@ -348,6 +354,40 @@ class ProfileService:
         self.deletion_stop_timeout_seconds = 120.0
         self.deletion_poll_interval_seconds = 0.5
         self._font_catalog: FontSetCatalogService | None = None
+        self._extension_catalog: ExtensionCatalogService | None = None
+
+    def set_extension_catalog(
+        self, catalog: ExtensionCatalogService | None
+    ) -> None:
+        """Wire the managed extension catalog after construction (app lifespan)."""
+        self._extension_catalog = catalog
+
+    def extension_catalog(self) -> ExtensionCatalogService:
+        """The shared managed extension asset catalog bound to this service's DB."""
+        if self._extension_catalog is None:
+            self._extension_catalog = ExtensionCatalogService(
+                ExtensionAssetRepository(self._repo._session_maker),
+                data_root=self._data_root,
+            )
+        return self._extension_catalog
+
+    async def _validate_extensions(
+        self, extension_ids: list[str] | None
+    ) -> None:
+        if not extension_ids:
+            return
+        try:
+            await self.extension_catalog().validate_binding(list(extension_ids))
+        except ExtensionBindingError as exc:
+            raise ReferenceValidationError(
+                [
+                    {
+                        "loc": ["body", "extension_ids"],
+                        "msg": str(exc),
+                        "type": "value_error",
+                    }
+                ]
+            ) from None
 
     def set_font_catalog(self, catalog: FontSetCatalogService | None) -> None:
         """Wire the font catalog after construction (app lifespan)."""
@@ -576,6 +616,7 @@ class ProfileService:
             await self._validate_font_set_binding(
                 config.fingerprint_platform, config.font_set_id
             )
+        await self._validate_extensions(config.extension_ids)
         await self._validate_references(config.group_id, config.proxy_id)
         try:
             return await self._repo.create_profile(
@@ -584,6 +625,10 @@ class ProfileService:
                 operation_id=operation_id,
                 req_payload=req_payload,
             )
+        except MissingExtensionReferenceError as exc:
+            raise ReferenceValidationError(
+                [{"loc": ["body", "extension_ids"], "msg": str(exc), "type": "value_error"}]
+            ) from None
         except DBAPIError as e:
             self._handle_db_error(e)
 
@@ -710,52 +755,70 @@ class ProfileService:
             if isinstance(patch_data, ProfileConfig)
             else dict(patch_data)
         )
-        if "fingerprint_platform" in patch_dict or "font_set_id" in patch_dict:
+        needs_platform_check = (
+            "fingerprint_platform" in patch_dict or "font_set_id" in patch_dict
+        )
+        needs_current_extensions = (
+            "extension_ids" not in patch_dict
+            and patch_dict.get("allow_extensions") is True
+        )
+        current: Profile | None = None
+        if needs_platform_check or needs_current_extensions:
             current = await self._repo.get_profile(profile_id)
-            if current is not None:
-                platform = patch_dict.get(
-                    "fingerprint_platform", current.config.fingerprint_platform
-                )
-                if platform != current.config.fingerprint_platform:
-                    # t075: switching platform rebinds the profile to
-                    # the new platform's catalog default set.  With a
-                    # font root configured, the switch fails before
-                    # anything is written when the target platform has
-                    # no verified set, so a profile can never land on a
-                    # platform whose fonts it cannot use.  With no font
-                    # root configured (font subsystem out of scope for
-                    # the process), the stale cross-platform binding is
-                    # dropped instead.
-                    if self.font_catalog().root_configured():
-                        default = await self.font_catalog().default_set_id(
-                            platform
-                        )
-                        if default is None:
-                            raise InvalidFontSetBindingError(
-                                f"no available {platform} font set; import and "
-                                "verify a font set for the platform first"
-                            )
-                    else:
-                        default = None
-                    patch_dict["font_set_id"] = default
-                    if isinstance(patch_data, ProfileConfig):
-                        patch_data = patch_data.model_copy(
-                            update={"font_set_id": default}
-                        )
-                    if default is not None:
-                        await self._validate_font_set_binding(platform, default)
-                elif patch_dict.get(
-                    "font_set_id", current.config.font_set_id
-                ) != current.config.font_set_id:
-                    await self._validate_font_set_binding(
-                        platform, patch_dict.get("font_set_id")
+            if current is None:
+                raise ProfileNotFoundError(profile_id)
+        if needs_platform_check:
+            assert current is not None
+            platform = patch_dict.get(
+                "fingerprint_platform", current.config.fingerprint_platform
+            )
+            if platform != current.config.fingerprint_platform:
+                # t075: switching platform rebinds the profile to
+                # the new platform's catalog default set.  With a
+                # font root configured, the switch fails before
+                # anything is written when the target platform has
+                # no verified set, so a profile can never land on a
+                # platform whose fonts it cannot use.  With no font
+                # root configured (font subsystem out of scope for
+                # the process), the stale cross-platform binding is
+                # dropped instead.
+                if self.font_catalog().root_configured():
+                    default = await self.font_catalog().default_set_id(
+                        platform
                     )
+                    if default is None:
+                        raise InvalidFontSetBindingError(
+                            f"no available {platform} font set; import and "
+                            "verify a font set for the platform first"
+                        )
+                else:
+                    default = None
+                patch_dict["font_set_id"] = default
+                if isinstance(patch_data, ProfileConfig):
+                    patch_data = patch_data.model_copy(
+                        update={"font_set_id": default}
+                    )
+                if default is not None:
+                    await self._validate_font_set_binding(platform, default)
+            elif patch_dict.get(
+                "font_set_id", current.config.font_set_id
+            ) != current.config.font_set_id:
+                await self._validate_font_set_binding(
+                    platform, patch_dict.get("font_set_id")
+                )
         # t056 A28: only keys present in the patch are validated; an
         # explicit null clears the reference and needs no lookup.
         if "group_id" in patch_dict or "proxy_id" in patch_dict:
             await self._validate_references(
                 patch_dict.get("group_id"), patch_dict.get("proxy_id")
             )
+        if "extension_ids" in patch_dict or patch_dict.get("allow_extensions") is True:
+            ext_ids = (
+                patch_dict.get("extension_ids")
+                if "extension_ids" in patch_dict
+                else current.config.extension_ids  # type: ignore[union-attr]
+            )
+            await self._validate_extensions(ext_ids)
         if not isinstance(patch_data, ProfileConfig):
             # The font-binding branch above may have rewritten
             # patch_dict (platform-switch rebind); a dict patch must
@@ -771,6 +834,10 @@ class ProfileService:
             if not profile:
                 raise ProfileNotFoundError(profile_id)
             return profile
+        except MissingExtensionReferenceError as exc:
+            raise ReferenceValidationError(
+                [{"loc": ["body", "extension_ids"], "msg": str(exc), "type": "value_error"}]
+            ) from None
         except DBAPIError as e:
             self._handle_db_error(e)
 
@@ -1495,22 +1562,34 @@ class ProfileService:
                             "name": clone_name,
                         }
                     )
-                    clone = await self._repo.create_profile(
-                        config=config,
-                        profile_id=clone_id,
-                        user_data_dir=str(clone_dir),
-                        operation_id=operation_id,
-                        req_payload={
-                            "source_profile_id": profile_id,
-                            "include_browser_state": include_browser_state,
-                            "name": clone_name,
-                        },
-                        audit_source=(
-                            f"duplicate:{profile_id}:"
-                            f"{int(include_browser_state)}:"
-                            f"{clone_name}"
-                        ),
-                    )
+                    await self._validate_extensions(config.extension_ids)
+                    try:
+                        clone = await self._repo.create_profile(
+                            config=config,
+                            profile_id=clone_id,
+                            user_data_dir=str(clone_dir),
+                            operation_id=operation_id,
+                            req_payload={
+                                "source_profile_id": profile_id,
+                                "include_browser_state": include_browser_state,
+                                "name": clone_name,
+                            },
+                            audit_source=(
+                                f"duplicate:{profile_id}:"
+                                f"{int(include_browser_state)}:"
+                                f"{clone_name}"
+                            ),
+                        )
+                    except MissingExtensionReferenceError as exc:
+                        raise ReferenceValidationError(
+                            [
+                                {
+                                    "loc": ["body", "extension_ids"],
+                                    "msg": str(exc),
+                                    "type": "value_error",
+                                }
+                            ]
+                        ) from None
                     if clone.id != clone_id:
                         await asyncio.to_thread(
                             _cleanup_copy, clone_dir.parent, profile_id

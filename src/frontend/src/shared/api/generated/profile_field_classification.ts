@@ -10,4 +10,4 @@ export const PROFILE_METADATA_FIELDS = ["group_id", "name", "notes", "sort_order
 
 export const PROFILE_INSTANT_FIELDS = ["capture_preview"] as const;
 
-export const PROFILE_RUNTIME_FIELDS = ["clipboard_sync", "color_scheme", "extension_paths", "fingerprint_platform", "fingerprint_seed", "font_set_id", "geoip", "include_cjk_fonts", "locale", "mute_audio", "proxy_id", "restore_session", "screen_height", "screen_width", "set_google_default", "timezone"] as const;
+export const PROFILE_RUNTIME_FIELDS = ["allow_extensions", "clipboard_sync", "color_scheme", "extension_ids", "fingerprint_platform", "fingerprint_seed", "font_set_id", "geoip", "include_cjk_fonts", "locale", "mute_audio", "proxy_id", "restore_session", "screen_height", "screen_width", "set_google_default", "timezone"] as const;

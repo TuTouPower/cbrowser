@@ -115,3 +115,8 @@ Chrome CDP 仅监听容器回环，禁止宿主端口映射或容器网络直连
 |policy.json|`PreviewPolicy`：enabled / epoch / runtime_instance_id|
 |frame\_\*.jpg|最新一帧 JPEG；停止后保留最后一帧|
 |meta.json|`PreviewMeta`：captured_at / runtime_instance_id / policy_epoch / image_sha256（原子指针）|
+
+## 受管扩展四态启动、目录校验与优雅停机（t104）
+
+- `cloakbrowser 0.6.4` 的 `launch_persistent_context_async` 硬编码 `IGNORE_DEFAULT_ARGS`，无法撤销 Playwright 注入的 `--disable-extensions` 与 `--disable-component-extensions-with-background-pages`。`runtime_agent/stealth_launch.py` 复用 CloakBrowser 参数/GeoIP/代理/License 解析助手的同时显式接管 `ignore_default_args`：默认 `allow_extensions=False` 仍保留 `--disable-extensions` 且不传递扩展路径；`allow_extensions=True` 且 `extension_ids=[]`（自由模式）仅撤除上述两项开关（`ungoogled-chromium 146.0.7680.177.3` 实测仅支持开发者模式 `Load unpacked` 经 GTK3 对话框选择持久目录）；`allow_extensions=True` 且非空 `extension_ids`（受管模式）同时传 `--load-extension=<ordered>` 与 `--disable-extensions-except=<ordered>`，按绑定顺序加载受管资产并拒绝自由扩展。
+- `BrowserRunner` 在启动 Chrome 前校验每个 `/run/cbrowser/extensions/{asset_id}` 存在且逐文件 SHA-256 与 manifest 清单匹配，缺失或篡改即以 `ExtensionUnavailableError` fail-closed 拒启。`DockerAdapter.cleanup_container_by_name` 在强制删除运行中的 `browser` 容器前先执行 `stop(timeout=8)` 触发 `runner.stop()` -> `context.close()` 优雅关闭，保证 Chromium `Preferences`、自由模式加载记录及本地扩展存储跨重启可靠落盘。

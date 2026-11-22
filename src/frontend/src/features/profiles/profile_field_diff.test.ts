@@ -27,6 +27,8 @@ describe("profile_field_diff (t058 A24)", () => {
     expect(classifyProfileField("capture_preview")).toBe("instant");
     expect(classifyProfileField("name")).toBe("metadata");
     expect(classifyProfileField("timezone")).toBe("runtime");
+    expect(classifyProfileField("allow_extensions")).toBe("runtime");
+    expect(classifyProfileField("extension_ids")).toBe("runtime");
     expect(classifyProfileField("group_id")).toBe("metadata");
     expect(classifyProfileField("no_such_field")).toBeNull();
   });
@@ -54,16 +56,16 @@ describe("profile_field_diff (t058 A24)", () => {
   it("compares array fields by value, not by identity", () => {
     expect(
       diffProfileValues(
-        baseValues({ extension_paths: ["/ext/a"] }),
-        baseValues({ extension_paths: ["/ext/a"] }),
+        baseValues({ extension_ids: ["a".repeat(64)] }),
+        baseValues({ extension_ids: ["a".repeat(64)] }),
       ),
     ).toEqual({});
     expect(
       diffProfileValues(
-        baseValues({ extension_paths: ["/ext/a", "/ext/b"] }),
-        baseValues({ extension_paths: ["/ext/a"] }),
+        baseValues({ extension_ids: ["a".repeat(64), "b".repeat(64)] }),
+        baseValues({ extension_ids: ["a".repeat(64)] }),
       ),
-    ).toEqual({ extension_paths: ["/ext/a", "/ext/b"] });
+    ).toEqual({ extension_ids: ["a".repeat(64), "b".repeat(64)] });
   });
 
   it("does not count a metadata-only change as a runtime change", () => {
@@ -80,6 +82,27 @@ describe("profile_field_diff (t058 A24)", () => {
       hasRuntimeConfigChange(
         baseValues({ timezone: "Asia/Shanghai" }),
         baseValues({ timezone: "Europe/London" }),
+      ),
+    ).toBe(true);
+  });
+
+  it("counts allow_extensions and extension_ids changes as runtime changes", () => {
+    expect(
+      hasRuntimeConfigChange(
+        baseValues({ allow_extensions: true }),
+        baseValues({ allow_extensions: false }),
+      ),
+    ).toBe(true);
+    expect(
+      hasRuntimeConfigChange(
+        baseValues({ extension_ids: ["a".repeat(64)] }),
+        baseValues({ extension_ids: [] }),
+      ),
+    ).toBe(true);
+    expect(
+      hasRuntimeConfigChange(
+        baseValues({ extension_ids: ["b".repeat(64), "a".repeat(64)] }),
+        baseValues({ extension_ids: ["a".repeat(64), "b".repeat(64)] }),
       ),
     ).toBe(true);
   });

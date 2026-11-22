@@ -96,7 +96,8 @@ def test_create_and_update_reject_removed_fields_with_422_and_zero_writes(
     assert created["screen_width"] == 1920
     assert created["screen_height"] == 1080
     assert created["color_scheme"] == "light"
-    assert created["extension_paths"] == []
+    assert created["allow_extensions"] is False
+    assert created["extension_ids"] == []
     for gone, _ in REMOVED_FIELD_CASES:
         assert gone not in created
 
@@ -172,7 +173,7 @@ async def test_mute_audio_defaults_versioning_and_n_vs_n_plus_1_upgrade_supervis
             locale="zh-CN",
             geoip=True,
             launch_args=["--mute-audio", "--disable-sync"],
-            extension_paths=["/opt/ext"],
+            extension_paths=[],
             current_config_version=2,
             bound_version=1,
             runtime_instance_id="inst_old_running",
@@ -213,7 +214,7 @@ async def test_mute_audio_defaults_versioning_and_n_vs_n_plus_1_upgrade_supervis
             wrapped=True,
             locale="zh-CN",
             launch_args=["--mute-audio", "--disable-translate"],
-            extension_paths=["/opt/ext"],
+            extension_paths=[],
         )
         v2_snap = json.loads(
             conn.execute(

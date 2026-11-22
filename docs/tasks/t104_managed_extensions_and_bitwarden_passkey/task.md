@@ -43,11 +43,11 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：控制面提供受管扩展资产导入/上传、合法性校验、列表查询与引用保护接口：合法扩展包生成不可变受管资产 ID 并保留名称、版本、图标与扩展身份校验信息；损坏压缩包、缺失或非法 `manifest.json`、无法确定稳定扩展标识的包或仍被环境/绑定版本引用的资产删除均在 API 边界明确拒绝。
-- [ ] AC-002：Profile 运行配置与 API 由 `allow_extensions`（默认关闭）及受管扩展 ID 列表替换原始 `extension_paths`；关闭态既禁用扩展系统也不传递显式加载路径；迁移前扫描 `profiles` 当前行及全部历史快照的 `extension_paths`，精确区分空列表、可验证映射、缺失与歧义，可验证映射须经受信标识与制品校验同时绑定版本化资产、设为允许且保持迁移前后 Chromium 扩展 ID（`chrome.runtime.id`）与合成扩展本地存储状态连续；缺失、歧义或无法保持 Chromium 扩展 ID 连续性的条目指名 Profile 与版本 fail-before-write 阻断（零业务写入）；前向迁移支持平铺与包装快照并保持幂等，旧 `extension_paths` 键在创建或更新接口返回 422 校验错误。
-- [ ] AC-003：新建与编辑表单默认隐藏或禁用扩展选择器，勾选「允许扩展」后支持多选、增删多个受管扩展（不暴露按逗号切分的自由文本路径）并展示开启扩展的指纹与跨环境凭证缓存风险提示；配置保存、回显、待应用提示及 OpenAPI/前端生成类型与 `profile_field_classification.ts` 完全同步。
-- [ ] [deploy] AC-004：在固定目标浏览器引擎的真实有头容器拓扑中验证扩展四态与自由模式：1）默认关闭态不加载扩展；2）受管模式同一 Profile 可同时加载并运行两项选中受管扩展，并拒绝曾在自由模式安装的未选中扩展；3）用已安装过扩展的持久化 Profile 切回关闭态重启后，原有扩展内容脚本与后台行为确实不再执行且启动命令无显式加载路径；4）两个 Profile 相互隔离（未绑定资产在另一 Profile 与 Stream 容器均不可见，扩展运行态本地存储不串用）；5）按前置实验裁决的自由模式受支持入口验证安装合成扩展、执行并重启持久化。
-- [ ] [deploy] AC-005：在固定目标浏览器引擎的真实有头容器与代理链路下通过受管模式加载 Bitwarden 官方扩展，验证扩展在浏览器代理链路下登录同步（不绕过代理直连），并成功完成 WebAuthn Passkey 注册（`navigator.credentials.create`）与 Passkey 登录（`navigator.credentials.get`）流程。
+- [x] AC-001：控制面提供受管扩展资产导入/上传、合法性校验、列表查询与引用保护接口：合法扩展包生成不可变受管资产 ID 并保留名称、版本、图标与扩展身份校验信息；损坏压缩包、缺失或非法 `manifest.json`、无法确定稳定扩展标识的包或仍被环境/绑定版本引用的资产删除均在 API 边界明确拒绝。
+- [x] AC-002：Profile 运行配置与 API 由 `allow_extensions`（默认关闭）及受管扩展 ID 列表替换原始 `extension_paths`；关闭态既禁用扩展系统也不传递显式加载路径；迁移前扫描 `profiles` 当前行及全部历史快照的 `extension_paths`，精确区分空列表、可验证映射、缺失与歧义，可验证映射须经受信标识与制品校验同时绑定版本化资产、设为允许且保持迁移前后 Chromium 扩展 ID（`chrome.runtime.id`）与合成扩展本地存储状态连续；缺失、歧义或无法保持 Chromium 扩展 ID 连续性的条目指名 Profile 与版本 fail-before-write 阻断（零业务写入）；前向迁移支持平铺与包装快照并保持幂等，旧 `extension_paths` 键在创建或更新接口返回 422 校验错误。
+- [x] AC-003：新建与编辑表单默认隐藏或禁用扩展选择器，勾选「允许扩展」后支持多选、增删多个受管扩展（不暴露按逗号切分的自由文本路径）并展示开启扩展的指纹与跨环境凭证缓存风险提示；配置保存、回显、待应用提示及 OpenAPI/前端生成类型与 `profile_field_classification.ts` 完全同步。
+- [x] [deploy] AC-004：在固定目标浏览器引擎的真实有头容器拓扑中验证扩展四态与自由模式：1）默认关闭态不加载扩展；2）受管模式同一 Profile 可同时加载并运行两项选中受管扩展，并拒绝曾在自由模式安装的未选中扩展；3）用已安装过扩展的持久化 Profile 切回关闭态重启后，原有扩展内容脚本与后台行为确实不再执行且启动命令无显式加载路径；4）两个 Profile 相互隔离（未绑定资产在另一 Profile 与 Stream 容器均不可见，扩展运行态本地存储不串用）；5）按前置实验裁决的自由模式受支持入口验证安装合成扩展、执行并重启持久化。
+- [x] [deploy] AC-005：在固定目标浏览器引擎的真实有头容器与代理链路下通过受管模式加载 Bitwarden 官方扩展，验证扩展在浏览器代理链路下登录同步（不绕过代理直连），并成功完成 WebAuthn Passkey 注册（`navigator.credentials.create`）与 Passkey 登录（`navigator.credentials.get`）流程。
 
 ### 可测试性声明
 
@@ -84,8 +84,8 @@
 
 <!-- /规范 -->
 
-- 自由模式下固定 `146.0.7680.177.3`（`ungoogled-chromium`）的实际扩展安装入口（Chrome Web Store / 本地 `.crx` 拖入 / 开发者模式加载解压目录）：`UNVERIFIED-SPIKE`，在实施自由模式前于去掉 `--disable-extensions` 的隔离有头容器中逐项实测三个候选入口并先定结论；若三者均不可用，先裁决保留方案或暂只交付受管模式。
-- 固定 `146` 引擎在移除 `--disable-extensions` 后加载多扩展（含带/不带 manifest `key` 的 ID 稳定性及 Bitwarden 官方扩展）与代理环境下 `navigator.credentials.create/get` 链路兼容性：`UNVERIFIED-SPIKE`，在临时隔离容器中先用双合成 MV3 扩展与 Bitwarden 扩展实测验证后回填结论再冻结实现。
+- 自由模式下固定 `146.0.7680.177.3`（`ungoogled-chromium`）的实际扩展安装入口（Chrome Web Store / 本地 `.crx` 拖入 / 开发者模式加载解压目录）：已核实（[s029](../../spikes/s029_extensions_and_bitwarden_passkey/report.md) / [d055](../../findings/d055_extensions_and_bitwarden_passkey.md)）。在去掉 `--disable-extensions` 且不传 `--load-extension`/`--disable-extensions-except` 的隔离有头容器内实测：Chrome Web Store 仍提示 `Switch to Chrome to install extensions and themes` 且 `Add to Chrome` 按钮 disabled；`file://` 与拖放本地 `.crx` 仅触发下载或无反应；**唯一可用且持久化入口为在 `chrome://extensions` 开启开发者模式并点击「Load unpacked（加载已解压的扩展程序）」经 GTK3 文件选择框加载扩展目录**（重启自由模式保持生效，切回关闭态彻底停用，切入受管模式被拒绝）。决定保留自由模式并显式以开发者模式加载解压目录（如 `/exchange/uploads` 内目录）作为受支持的自由安装入口与产品说明。
+- 固定 `146` 引擎在移除 `--disable-extensions` 后加载多扩展（含带/不带 manifest `key` 的 ID 稳定性及 Bitwarden 官方扩展）与代理环境下 `navigator.credentials.create/get` 链路兼容性：已核实（[s029](../../spikes/s029_extensions_and_bitwarden_passkey/report.md) / [d055](../../findings/d055_extensions_and_bitwarden_passkey.md)）。无 `manifest.key` 解压扩展路径变更会漂移 `chrome.runtime.id` 并丢失 `chrome.storage.local`；带有效公钥 `key`（含从官方 `bitwarden.crx` CRX3 按 `SignedHeaderData.crx_id` 提取公钥回填 `manifest.json["key"]`）在跨路径重挂载后 `chrome.runtime.id`（`nngceckbapebfimnlniiiahkandclblb`）与存储完全连续；官方 Bitwarden 扩展与多扩展并发在 `146.0.7680.177.3` 中经唯一 HTTP CONNECT 代理与 `Vaultwarden 1.37.5` 登录同步后，可真实拦截 `navigator.credentials.create` 与 `navigator.credentials.get` 完成 Passkey 创建与登录认证（零直连绕过）。
 
 ### 风险与回退
 

@@ -161,3 +161,9 @@
 - 部署身份是启动前提：Supervisor 启动入口对缺失/空的部署实例 ID 直接失败，先于任何 Docker 客户端构造与资源变更；运行期不存在「未配置即全认领」的降级模式。
 - 持久化与 API 输入在边界严格拒绝（t103 更新）：通用 `launch_args` 与六个无效开关已完全退役并删除 `cbrowser/launch_args.py`；写入边界 `extra="forbid"` 对任一已删除键返回 422 零写入，前向迁移 `0016` 在修改 schema 或数据前对全部表行与历史快照做只读盘点，存在不可归并参数或损坏快照即 fail-before-write 中止；任何层都不得静默忽略或降级容忍未知输入。
 - viewer 身份只有一个文档化来源（宿主页 `?profileId=`）：URL 的其他参数名与全局变量注入都不是身份来源，出现即拒绝，防止 iframe 内页面自带身份越权到其他 Profile。
+
+## 受管扩展与 Passkey 出站信任边界（t104）
+
+- **扩展档案与 ID 校验边界**：`cbrowser/extensions/manifest.py` 拒绝路径穿越（绝对路径、`..`、`\`、`:`）、档案内部符号链接、超大解压体积与超限文件数，校验 `manifest.json` 合法性并解析唯一可信签发公钥（CRX3 按 `SignedHeaderData.crx_id` 选定证明并回写 `manifest.json["key"]`）；无确定扩展 ID 的无 `key` `.zip` 直接 422 拒绝。
+- **挂载、停机与隔离边界**：Supervisor 仅在 `allow_extensions=True` 且绑定非空资产时以 subpath `:ro` 挂载 `/run/cbrowser/extensions/{asset_id}`，Stream 容器与关闭/自由态 Profile 零挂载，Browser 启动前校验清单摘要；扩展存储保留在所属 Profile 隔离 `user_data_dir`，两 Profile 之间扩展状态、存储与本地 Vault 缓存完全隔离。
+- **扩展出站与 Bitwarden Passkey 代理防泄露**：容器内包括 Bitwarden MV3 扩展同步（Vaultwarden）与 HTTPS WebAuthn Passkey 在内的全部出站流量仍受 CloakBrowser `proxy=` + Policy Agent 双栈 `OUTPUT -j DROP` 约束，除受管代理端点外直连宿主或公网均被内核阻断，零直连旁路；开启扩展时的浏览器指纹暴露风险与密码管理器本地缓存隔离由表单显式警示。

@@ -1,0 +1,19 @@
+{
+  "tid": "t104",
+  "attempt": 1,
+  "execution_id": "650d1ff9ef804114976de521fdbdedf8",
+  "status": "done",
+  "branch": "t104_managed_extensions_and_bitwarden_passkey",
+  "base_sha": "41a4a3e848e673007090e4489beb0fbdb7ee5765",
+  "spec_source_sha": "41a4a3e848e673007090e4489beb0fbdb7ee5765",
+  "tests": "`scripts/run_gates.sh` 全部通过（`contract` `388 passed, 1 skipped`；`unit` `2444 passed, 13 skipped` + `85 passed`；`integration` `225 passed, 18 skipped` + `4 passed`；`frontend_test` `88 files / 752 passed`）；`design:lint`（0 error / 0 warning）、`design:check`、`check:api`、`test:types`、`Vite build`、`verify_frontend_dist` 及四份协议 `--check` 全通过。",
+  "blackbox": "增量重建全部 6 个 Docker 镜像经 `verify_image_packages.py` 核验依赖闭合（`api` 43 / `gateway` 19 / `supervisor` 22 / `browser` 40 / `stream` 35 包），在独立隔离拓扑重跑并通过 `.scratch/t104_deploy_verify/verify_ac004.py`（Caddy/UI、关态、`[ext1, ext2]` 并发与自由扩展拒载、Free 模式 GTK3 Load unpacked 跨重启持久、切回关态停用、双受管 Profile 同扩展双向 `chrome.storage.local` 隔离与 Stream 零挂载）、`verify_ac005.py`（官方 Bitwarden CRX3 `2026.11.0` 经认证 CONNECT 代理与 `ghcr.io/dani-garcia/vaultwarden:alpine` 同步、Policy Agent 零直连阻断与 WebAuthn `navigator.credentials.create/get` 同 ID `juZvVKBATK6_3MIrUfvJOQ` Passkey 闭环）及 `verify_migration_and_restore.py`（`0016 -> 0017` ID/存储连续性与 `restore_point.py` 备份恢复），清理后无残留容器/网络/卷。",
+  "review": "`full` 级 Round 2 `overall=PASS`（`review_code.md` 与 `review_test.md` 均 `verdict: PASS`、`reviewed_scope: 0ce7fd1e4cb519c9`、`ac_review=ok`、`coverage = 3 / 5`；Round 1 全部 blocking 与测试 finding 均已消除，Round 2 Test 零新增，Code 唯一新增非阻断 `minor` `t104_code_f012` 遗留至 `p167`；两项 `[deploy]` AC 按规则标 `trust_prior` 建议合并前人工抽查）。",
+  "review_scope": "0ce7fd1e4cb519c9",
+  "pending": [
+    "p167"
+  ],
+  "findings": [
+    "d055"
+  ]
+}
