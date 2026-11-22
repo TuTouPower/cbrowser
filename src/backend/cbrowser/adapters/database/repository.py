@@ -51,7 +51,6 @@ from cbrowser.domain.models import (
     utc_now_iso,
 )
 from cbrowser.domain.proxy_endpoint import ProxyEndpoint
-from cbrowser.launch_args import InvalidLaunchArgument, validate_launch_args
 from cbrowser.domain.runtime_policy import (
     AUTO_RETRY_DELAYS,
     BLOCK_AFTER_RUNTIME_FAILURES,
@@ -254,23 +253,17 @@ class ProfileRepository:
                     locale=config.locale,
                     screen_width=config.screen_width,
                     screen_height=config.screen_height,
-                    humanize=config.humanize,
-                    human_preset=config.human_preset,
                     geoip=config.geoip,
                     clipboard_sync=config.clipboard_sync,
-                    auto_launch=config.auto_launch,
                     color_scheme=config.color_scheme,
                     fingerprint_platform=config.fingerprint_platform,
                     font_set_id=config.font_set_id,
                     include_cjk_fonts=config.include_cjk_fonts,
-                    launch_args=json.dumps(config.launch_args),
                     extension_paths=json.dumps(config.extension_paths),
-                    allow_3p_cookies=config.allow_3p_cookies,
                     set_google_default=config.set_google_default,
                     capture_preview=config.capture_preview,
                     restore_session=config.restore_session,
-                    transparent_proxy=config.transparent_proxy,
-                    portable_cookies=config.portable_cookies,
+                    mute_audio=config.mute_audio,
                     notes=config.notes,
                     user_data_dir=udd,
                     sort_order=config.sort_order,
@@ -723,27 +716,19 @@ class ProfileRepository:
                     "locale": p_model.locale,
                     "screen_width": p_model.screen_width,
                     "screen_height": p_model.screen_height,
-                    "humanize": p_model.humanize,
-                    "human_preset": p_model.human_preset,
                     "geoip": p_model.geoip,
                     "clipboard_sync": p_model.clipboard_sync,
-                    "auto_launch": p_model.auto_launch,
                     "color_scheme": p_model.color_scheme,
                     "fingerprint_platform": p_model.fingerprint_platform,
                     "font_set_id": p_model.font_set_id,
                     "include_cjk_fonts": p_model.include_cjk_fonts,
-                    "launch_args": json.loads(p_model.launch_args)
-                    if p_model.launch_args
-                    else [],
                     "extension_paths": json.loads(p_model.extension_paths)
                     if p_model.extension_paths
                     else [],
-                    "allow_3p_cookies": p_model.allow_3p_cookies,
                     "set_google_default": p_model.set_google_default,
                     "capture_preview": p_model.capture_preview,
                     "restore_session": p_model.restore_session,
-                    "transparent_proxy": p_model.transparent_proxy,
-                    "portable_cookies": p_model.portable_cookies,
+                    "mute_audio": p_model.mute_audio,
                     "notes": p_model.notes,
                     "sort_order": p_model.sort_order,
                 }
@@ -774,18 +759,13 @@ class ProfileRepository:
                 p_model.locale = merged_cfg.locale
                 p_model.screen_width = merged_cfg.screen_width
                 p_model.screen_height = merged_cfg.screen_height
-                p_model.humanize = merged_cfg.humanize
-                p_model.human_preset = merged_cfg.human_preset
                 p_model.geoip = merged_cfg.geoip
                 p_model.clipboard_sync = merged_cfg.clipboard_sync
-                p_model.auto_launch = merged_cfg.auto_launch
                 p_model.color_scheme = merged_cfg.color_scheme
                 p_model.fingerprint_platform = merged_cfg.fingerprint_platform
                 p_model.font_set_id = merged_cfg.font_set_id
                 p_model.include_cjk_fonts = merged_cfg.include_cjk_fonts
-                p_model.launch_args = json.dumps(merged_cfg.launch_args)
                 p_model.extension_paths = json.dumps(merged_cfg.extension_paths)
-                p_model.allow_3p_cookies = merged_cfg.allow_3p_cookies
                 p_model.set_google_default = merged_cfg.set_google_default
                 if old_cfg.capture_preview != merged_cfg.capture_preview:
                     p_model.capture_preview_epoch = (
@@ -793,8 +773,7 @@ class ProfileRepository:
                     ) + 1
                 p_model.capture_preview = merged_cfg.capture_preview
                 p_model.restore_session = merged_cfg.restore_session
-                p_model.transparent_proxy = merged_cfg.transparent_proxy
-                p_model.portable_cookies = merged_cfg.portable_cookies
+                p_model.mute_audio = merged_cfg.mute_audio
                 p_model.notes = merged_cfg.notes
                 p_model.sort_order = merged_cfg.sort_order
                 p_model.current_config_version = new_version
@@ -1546,45 +1525,7 @@ class ProfileRepository:
 
     @staticmethod
     def _to_domain_profile(m: ProfileModel) -> Profile:
-        stored_launch_args = json.loads(m.launch_args) if m.launch_args else []
-        try:
-            validate_launch_args(stored_launch_args)
-        except InvalidLaunchArgument as exc:
-            # t069: an out-of-whitelist stored launch argument is a
-            # fixable Profile row, never silently filtered away: reject
-            # before the Profile can start and name the Profile.
-            raise RuntimeError(
-                f"Profile {m.id} has invalid stored launch_args: {exc}"
-            ) from exc
-        cfg = ProfileConfig(
-            name=m.name,
-            fingerprint_seed=m.fingerprint_seed,
-            group_id=m.group_id,
-            proxy_id=m.proxy_id,
-            timezone=m.timezone,
-            locale=m.locale,
-            screen_width=m.screen_width,
-            screen_height=m.screen_height,
-            humanize=m.humanize,
-            human_preset=m.human_preset,  # type: ignore
-            geoip=m.geoip,
-            clipboard_sync=m.clipboard_sync,
-            auto_launch=m.auto_launch,
-            color_scheme=m.color_scheme,  # type: ignore
-            fingerprint_platform=m.fingerprint_platform,  # type: ignore
-            font_set_id=m.font_set_id,  # type: ignore
-            include_cjk_fonts=m.include_cjk_fonts,
-            launch_args=stored_launch_args,
-            extension_paths=json.loads(m.extension_paths) if m.extension_paths else [],
-            allow_3p_cookies=m.allow_3p_cookies,
-            set_google_default=m.set_google_default,
-            capture_preview=m.capture_preview,
-            restore_session=m.restore_session,
-            transparent_proxy=m.transparent_proxy,
-            portable_cookies=m.portable_cookies,
-            notes=m.notes,
-            sort_order=m.sort_order,
-        )
+        cfg = ProfileRepository._profile_config_from_model(m)
         if m.display_number is None:
             # t056 A21: display_number is NOT NULL since 0009; a NULL row
             # is a corrupt database, never a defaultable 1.
@@ -2887,23 +2828,17 @@ class ProfileRepository:
             locale=m.locale,
             screen_width=m.screen_width,
             screen_height=m.screen_height,
-            humanize=m.humanize,
-            human_preset=m.human_preset,  # type: ignore
             geoip=m.geoip,
             clipboard_sync=m.clipboard_sync,
-            auto_launch=m.auto_launch,
             color_scheme=m.color_scheme,  # type: ignore
             fingerprint_platform=m.fingerprint_platform,  # type: ignore
             font_set_id=m.font_set_id,  # type: ignore
             include_cjk_fonts=m.include_cjk_fonts,
-            launch_args=json.loads(m.launch_args) if m.launch_args else [],
             extension_paths=json.loads(m.extension_paths) if m.extension_paths else [],
-            allow_3p_cookies=m.allow_3p_cookies,
             set_google_default=m.set_google_default,
             capture_preview=m.capture_preview,
             restore_session=m.restore_session,
-            transparent_proxy=m.transparent_proxy,
-            portable_cookies=m.portable_cookies,
+            mute_audio=m.mute_audio,
             notes=m.notes,
             sort_order=m.sort_order,
         )

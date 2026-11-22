@@ -67,11 +67,9 @@ def _revision_of_head(tmp_path: Path) -> str:
     return heads[0]
 
 
-def test_head_is_0017_and_single(tmp_path: Path) -> None:
-    """t094 probe-job migration (f1a2b3c4d5e6) follows e89a0014c001
-    as the new single head; asserting the prior head locks an obsolete
-    revision."""
-    assert _revision_of_head(tmp_path) == REVISION_0017
+# t103 appends 0016 (a10300160001) after 0015 (f1a2b3c4d5e6), retiring the
+# obsolete test_head_is_0017_and_single lock; test_t103_launch_args_migration.py
+# asserts the current single head.
 
 
 def test_upgrade_deletes_all_network_settings_rows(tmp_path: Path) -> None:

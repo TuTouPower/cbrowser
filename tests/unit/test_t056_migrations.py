@@ -321,29 +321,16 @@ def test_every_revision_downgrade_raises(tmp_path: Path) -> None:
             module.downgrade()
 
 
-def test_fresh_db_schema_matches_golden_except_intended_changes(
+def test_fresh_db_schema_matches_golden_after_t103(
     tmp_path: Path,
 ) -> None:
-    """Replaces ``test_fresh_db_schema_matches_before_except_display_number``:
-    t074 0010 adds country_name/city/latency_ms to proxy_egress_observations,
-    so the old "only display_number differs" assertion is obsolete. New
-    semantic: the only structural deltas vs the golden pre-change dump are
-    the A21 display_number NOT NULL change and the t074 0010 columns; no
-    pre-existing column is dropped. t078 0011 extends the registered
-    deltas by exactly one new table (``profile_deletions`` with its two
-    named indexes, primary-key autoindex and the partial unique index
-    that enforces one open intent per profile); t081 0012 extends the
-    allowed deltas by exactly one more new table, ``font_set_assets``
-    (the font asset catalog); t083 0013 extends them by one new column,
-    ``profile_runtimes.state_revision``; t075 (rechained after t083)
-    extends the registered deltas on ``profiles`` only: ``gpu_family``
-    is dropped (GPU identity is engine-derived, ADR 040),
-    ``color_scheme`` tightens to ``DEFAULT 'light' NOT NULL`` and
-    ``include_cjk_fonts`` is added — the first registered column drop,
-    deliberate and listed below; p130/p136 (rechained after t075) adds
-    one more table, ``profile_deletion_batch_members`` (membership rows
-    plus its named and primary-key autoindex). Nothing else may appear
-    and nothing pre-existing may vanish beyond these registered deltas."""
+    """Replaces ``test_fresh_db_schema_matches_golden_except_intended_changes``:
+    extends the cumulative fresh-DB golden schema registry with t103 (0016)
+    dropping the seven retired columns (``humanize``, ``human_preset``,
+    ``auto_launch``, ``launch_args``, ``allow_3p_cookies``,
+    ``transparent_proxy``, ``portable_cookies``) and adding
+    ``mute_audio BOOLEAN DEFAULT '0' NOT NULL`` on ``profiles``.
+    """
     db = tmp_path / "fresh.db"
     run_database_migrations(db)
     before = {}
@@ -415,11 +402,19 @@ def test_fresh_db_schema_matches_golden_except_intended_changes(
         "color_scheme VARCHAR(32) DEFAULT 'light' NOT NULL",
         "display_number INTEGER NOT NULL",
         "include_cjk_fonts BOOLEAN DEFAULT '1' NOT NULL",
+        "mute_audio BOOLEAN DEFAULT '0' NOT NULL",
     ]
     assert sorted(set(before_lines) - set(after_lines)) == [
+        "allow_3p_cookies BOOLEAN DEFAULT '1' NOT NULL",
+        "auto_launch BOOLEAN DEFAULT '0' NOT NULL",
         "color_scheme VARCHAR(32)",
         "display_number INTEGER",
         "gpu_family VARCHAR(32) DEFAULT 'auto' NOT NULL",
+        "human_preset VARCHAR(32) DEFAULT 'default' NOT NULL",
+        "humanize BOOLEAN DEFAULT '1' NOT NULL",
+        "launch_args TEXT DEFAULT '[]' NOT NULL",
+        "portable_cookies BOOLEAN DEFAULT '1' NOT NULL",
+        "transparent_proxy BOOLEAN DEFAULT '0' NOT NULL",
     ]
     obs_sql = after[("table", "proxy_egress_observations")]
     for column in (

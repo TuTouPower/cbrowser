@@ -1,7 +1,7 @@
 ---
 slug: release_deployment
 status: active
-tasks: [baseline, t075, t080, t097, t100, t102]
+tasks: [baseline, t075, t080, t097, t100, t102, t103]
 ---
 # 需求规范：Release 发布与回退
 
@@ -33,6 +33,7 @@ tasks: [baseline, t075, t080, t097, t100, t102]
 ## 回退约束
 
 - 回退显式选择上一（或命名）release 重部署并跑同一 readiness 验收，保留 Profile 数据和数据库。目标 release 的 Supervisor 按目标资源形状恢复 Profile，必要时重建 Browser。回退一律采用目标 release env 记录的实例身份执行（compose 插值中 shell 环境优先于 env 文件，调用方 shell 的身份值不得覆盖目标 release 的项目/prefix/数据根/secrets）。
+- 前向迁移升级与跨 revision 回退配合约束（t103）：升级时保留正在运行的旧 Browser 实例继续按已绑定版本 `N` 与既有 `snapshot.json` 运行，API 与控制面进入新修订（`current_config_version` 可领先至 `N+1` 呈现待应用），直至用户重启或应用配置由 Supervisor 按 API 返回的目标版本通过现行 `ProfileConfig` 重写 `snapshot.json` 并以新镜像重建容器；若须跨 Alembic revision 退回上一 release，须先停新版写入并经 `scripts/deploy.sh restore <pre-upgrade-backup>` 将数据库恢回旧 stamp，再切换至匹配的旧 release 与 `compose.yaml` 执行 `scripts/deploy.sh rollback <old_release>` 并通过 readiness 验收。
 - 目标 release 不具备 readiness 能力、其迁移 head 与当前数据库实际 stamp 不等、或工作树 `compose.yaml` 指纹与目标 `compose_sha256` 不一致时，在任何变更前拒绝并说明原因；不存在降级迁移。回退时按目标 release 记录的端口重渲染 Caddyfile，渲染产物 SHA-256 与目标 manifest 的 `caddyfile_sha256` 不一致同样拒绝（t054）。当前数据库版本为只读读取的实际 `alembic_version` stamp（空库/无表留给 API 启动处理）：同代旧 head、跨代旧 release（含需已删除 `ALLOWED_ORIGINS` 的旧 t042 release，不做兼容）均因不等被拒绝；一次已拉起又验收失败的发布若已把数据库升版，stamp 已变，旧 head 回退同样拒绝。回退验收失败时不报成功、指针不变。
 
 ## 凭证分级

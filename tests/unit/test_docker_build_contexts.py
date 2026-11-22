@@ -212,10 +212,4 @@ def test_supervisor_context_admits_every_copied_package_file() -> None:
     assert not rejected, "supervisor modules filtered out:\n" + "\n".join(rejected)
 
 
-def test_launch_args_module_is_importable() -> None:
-    """The module AC-001 ships into the supervisor image must import cleanly
-    in the gate environment (isolated-image execution is Docker-gated)."""
-    import importlib
-
-    module = importlib.import_module("cbrowser.launch_args")
-    assert module is not None
+# t103 retired cbrowser.launch_args (removed test_launch_args_module_is_importable).

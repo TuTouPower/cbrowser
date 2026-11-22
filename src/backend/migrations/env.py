@@ -3,7 +3,7 @@ from logging.config import fileConfig
 
 from alembic import context
 from cbrowser.adapters.database.models import Base
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, event, pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
@@ -35,8 +35,34 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+def _configure_sqlite_transactional_ddl(sync_engine) -> None:
+    """Ensure SQLite executes migration DDL and DML inside one real transaction.
+
+    Python's sqlite3 driver leaves ``isolation_level=""`` by default, which
+    auto-commits before DDL (such as batch_alter_table temp-table creation)
+    and breaks rollback atomicity on mid-migration failures. Keep foreign_keys
+    disabled during migrations so batch_alter_table table drops never trigger
+    ON DELETE CASCADE.
+    """
+    if sync_engine.dialect.name != "sqlite":
+        return
+
+    @event.listens_for(sync_engine, "connect")
+    def _do_connect(dbapi_connection, connection_record) -> None:
+        dbapi_connection.isolation_level = None
+
+    @event.listens_for(sync_engine, "begin")
+    def _do_begin(conn) -> None:
+        conn.exec_driver_sql("BEGIN")
+
+
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        transactional_ddl=True,
+        transaction_per_migration=True,
+    )
 
     with context.begin_transaction():
         context.run_migrations()
@@ -51,6 +77,7 @@ async def run_async_migrations() -> None:
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
+    _configure_sqlite_transactional_ddl(connectable.sync_engine)
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
@@ -75,6 +102,7 @@ def run_migrations_online() -> None:
             prefix="sqlalchemy.",
             poolclass=pool.NullPool,
         )
+        _configure_sqlite_transactional_ddl(connectable)
         with connectable.connect() as connection:
             do_run_migrations(connection)
         connectable.dispose()

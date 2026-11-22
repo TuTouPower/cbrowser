@@ -54,16 +54,16 @@ describe("profile_field_diff (t058 A24)", () => {
   it("compares array fields by value, not by identity", () => {
     expect(
       diffProfileValues(
-        baseValues({ launch_args: ["--a"] }),
-        baseValues({ launch_args: ["--a"] }),
+        baseValues({ extension_paths: ["/ext/a"] }),
+        baseValues({ extension_paths: ["/ext/a"] }),
       ),
     ).toEqual({});
     expect(
       diffProfileValues(
-        baseValues({ launch_args: ["--a", "--b"] }),
-        baseValues({ launch_args: ["--a"] }),
+        baseValues({ extension_paths: ["/ext/a", "/ext/b"] }),
+        baseValues({ extension_paths: ["/ext/a"] }),
       ),
-    ).toEqual({ launch_args: ["--a", "--b"] });
+    ).toEqual({ extension_paths: ["/ext/a", "/ext/b"] });
   });
 
   it("does not count a metadata-only change as a runtime change", () => {

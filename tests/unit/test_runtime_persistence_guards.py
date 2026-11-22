@@ -16,7 +16,6 @@ import pytest
 from cbrowser.runtime_agent.event_storage import StorageError, atomic_write_json
 from cbrowser.runtime_agent.protocol import RuntimeEventRecord
 from cbrowser.runtime_agent.runner import BrowserRunner
-from cbrowser.launch_args import InvalidLaunchArgument, validate_launch_args
 from cloakbrowser.config import PLATFORM_CHROMIUM_VERSIONS
 
 
@@ -66,27 +65,7 @@ def test_directory_sync_failure_never_acknowledges_durability(
         atomic_write_json(tmp_path / "event.json", {"event_id": "event_a"})
 
 
-def test_rejected_launch_argument_does_not_enter_logs(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    canary = "private_proxy_argument_canary_726f1d"
-    with caplog.at_level(logging.WARNING):
-        with pytest.raises(InvalidLaunchArgument):
-            validate_launch_args([f"--proxy-server={canary}\x01tail"])
-    assert canary not in caplog.text
-
-
-@pytest.mark.parametrize(
-    "features", ["IsolateOrigins", "Other,IsolateOrigins", "IsolateOrigins,Other"]
-)
-def test_disable_features_override_is_rejected(features: str) -> None:
-    with pytest.raises(InvalidLaunchArgument):
-        validate_launch_args([f"--disable-features={features}"])
-
-
-def test_non_whitelisted_feature_option_is_rejected() -> None:
-    with pytest.raises(InvalidLaunchArgument):
-        validate_launch_args(["--disable-features=UnrelatedFeature"])
+# t103 retired cbrowser.launch_args (removed obsolete launch_args log/disable-features whitelist tests).
 
 
 @pytest.mark.parametrize(

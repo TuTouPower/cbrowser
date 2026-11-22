@@ -60,10 +60,6 @@ function normalizePlatform(value: string | undefined): "windows" | "macos" {
   return value === "macos" ? "macos" : "windows";
 }
 
-function normalizePreset(value: string): "default" | "careful" {
-  return value === "careful" ? "careful" : "default";
-}
-
 function normalizeColorScheme(
   value: string | null | undefined,
 ): "light" | "dark" {
@@ -92,22 +88,16 @@ function toFormValues(initial?: ProfileResponse): ProfileFormValues {
     locale: initial.locale ?? null,
     screen_width: initial.screen_width,
     screen_height: initial.screen_height,
-    humanize: initial.humanize,
-    human_preset: normalizePreset(initial.human_preset),
     geoip: initial.geoip,
     clipboard_sync: initial.clipboard_sync,
-    auto_launch: initial.auto_launch,
     color_scheme: normalizeColorScheme(initial.color_scheme),
     include_cjk_fonts: initial.include_cjk_fonts,
     fingerprint_platform: normalizePlatform(initial.fingerprint_platform),
-    launch_args: initial.launch_args ?? [],
     extension_paths: initial.extension_paths ?? [],
-    allow_3p_cookies: initial.allow_3p_cookies,
     set_google_default: initial.set_google_default,
     capture_preview: initial.capture_preview,
     restore_session: initial.restore_session,
-    transparent_proxy: initial.transparent_proxy,
-    portable_cookies: initial.portable_cookies,
+    mute_audio: initial.mute_audio,
     notes: initial.notes ?? null,
     sort_order: initial.sort_order,
   };
@@ -206,21 +196,10 @@ const ADVANCED_BOOL_FIELDS: Array<{
   labelKey: TranslationKey;
   helpKey: TranslationKey;
 }> = [
-  { key: "humanize", labelKey: "formHumanize", helpKey: "formHumanizeHelp" },
   {
     key: "clipboard_sync",
     labelKey: "formClipboardSync",
     helpKey: "formClipboardSyncHelp",
-  },
-  {
-    key: "auto_launch",
-    labelKey: "formAutoLaunch",
-    helpKey: "formAutoLaunchHelp",
-  },
-  {
-    key: "allow_3p_cookies",
-    labelKey: "formAllow3pCookies",
-    helpKey: "formAllow3pCookiesHelp",
   },
   {
     key: "set_google_default",
@@ -233,14 +212,9 @@ const ADVANCED_BOOL_FIELDS: Array<{
     helpKey: "formRestoreSessionHelp",
   },
   {
-    key: "transparent_proxy",
-    labelKey: "formTransparentProxy",
-    helpKey: "formTransparentProxyHelp",
-  },
-  {
-    key: "portable_cookies",
-    labelKey: "formPortableCookies",
-    helpKey: "formPortableCookiesHelp",
+    key: "mute_audio",
+    labelKey: "formMuteAudio",
+    helpKey: "formMuteAudioHelp",
   },
   {
     key: "capture_preview",
@@ -325,10 +299,6 @@ export function ProfileForm({
   const platformOptions: SelectOption[] = [
     { value: "windows", label: t("formPlatformWindows") },
     { value: "macos", label: t("formPlatformMacos") },
-  ];
-  const presetOptions: SelectOption[] = [
-    { value: "default", label: t("formPresetDefault") },
-    { value: "careful", label: t("formPresetCareful") },
   ];
   const colorSchemeOptions: SelectOption[] = [
     { value: "light", label: t("formColorLight") },
@@ -837,38 +807,6 @@ export function ProfileForm({
               />
             ))}
           </div>
-          <Row
-            label={t("formHumanPreset")}
-            hint={<FieldHelp field={t("formHumanPreset")} text={t("formHumanPresetHelp")} />}
-          >
-            <Select
-              value={values.human_preset}
-              onValueChange={(value) =>
-                setField("human_preset", normalizePreset(value))
-              }
-              options={presetOptions}
-              ariaLabel={t("formHumanPreset")}
-              className="w-full"
-            />
-          </Row>
-          <Row
-            label={t("formLaunchArgs")}
-            hint={<FieldHelp field={t("formLaunchArgs")} text={t("formLaunchArgsHelp")} />}
-          >
-            <Input
-              aria-label={t("formLaunchArgs")}
-              value={(values.launch_args ?? []).join(", ")}
-              onChange={(event) =>
-                setField(
-                  "launch_args",
-                  event.target.value
-                    .split(",")
-                    .map((item) => item.trim())
-                    .filter(Boolean),
-                )
-              }
-            />
-          </Row>
           <Row
             label={t("formExtensionPaths")}
             hint={<FieldHelp field={t("formExtensionPaths")} text={t("formExtensionPathsHelp")} />}

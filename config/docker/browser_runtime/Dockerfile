@@ -116,7 +116,6 @@ ENV HOME=/home/cbrowser \
 # Copy backend codebase and entrypoint
 COPY src/backend/cbrowser/__init__.py /app/src/backend/cbrowser/__init__.py
 COPY src/backend/cbrowser/engine_artifacts.py /app/src/backend/cbrowser/engine_artifacts.py
-COPY src/backend/cbrowser/launch_args.py /app/src/backend/cbrowser/launch_args.py
 COPY src/backend/cbrowser/preview.py /app/src/backend/cbrowser/preview.py
 COPY src/backend/cbrowser/secret_files.py /app/src/backend/cbrowser/secret_files.py
 COPY src/backend/cbrowser/domain /app/src/backend/cbrowser/domain

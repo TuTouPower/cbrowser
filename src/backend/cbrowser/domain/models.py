@@ -18,7 +18,6 @@ from pydantic import (
 )
 
 from cbrowser.domain.profile_locale import validate_locale, validate_timezone
-from cbrowser.launch_args import validate_launch_args
 
 
 def utc_now_iso() -> str:
@@ -258,11 +257,8 @@ class ProfileConfig(BaseModel):
     locale: ProfileLocale | None = Field(default=None, max_length=64)
     screen_width: int = Field(default=1920, ge=100, le=10000)
     screen_height: int = Field(default=1080, ge=100, le=10000)
-    humanize: bool = True
-    human_preset: Literal["default", "careful"] = "default"
     geoip: bool = True
     clipboard_sync: bool = True
-    auto_launch: bool = False
     # t075: the web color preference is exactly light or dark.  The old
     # null / "no-preference" states both rendered light on the fixed
     # engine (p124 measurement) and are abolished, not carried over.
@@ -274,14 +270,11 @@ class ProfileConfig(BaseModel):
     # Independent of locale (t075): whether the platform font set's
     # Chinese fonts are exposed to this Profile.
     include_cjk_fonts: bool = True
-    launch_args: list[str] = Field(default_factory=list)
     extension_paths: list[str] = Field(default_factory=list)
-    allow_3p_cookies: bool = True
     set_google_default: bool = True
     capture_preview: bool = True
     restore_session: bool = True
-    transparent_proxy: bool = False
-    portable_cookies: bool = True
+    mute_audio: bool = False
     notes: str | None = None
     sort_order: int = 0
 
@@ -302,19 +295,11 @@ class ProfileConfig(BaseModel):
             raise ValueError("Profile name cannot be blank")
         return v.strip()
 
-    @field_validator("launch_args", "extension_paths", mode="before")
+    @field_validator("extension_paths", mode="before")
     @classmethod
     def coerce_null_lists(cls, v: Any) -> Any:
         # PATCH tri-state: an explicit null list clears the stored value.
         return [] if v is None else v
-
-    @field_validator("launch_args")
-    @classmethod
-    def normalize_launch_arguments(cls, v: list[str]) -> list[str]:
-        # Single strict validation (t069): persisted launch_args are
-        # never silently filtered or rewritten; an out-of-whitelist
-        # stored value fails validation and names the argument.
-        return validate_launch_args(v)
 
 
 class Profile(BaseModel):
@@ -486,11 +471,6 @@ class AuditEvent(BaseModel):
 class ProfileCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    @field_validator("launch_args")
-    @classmethod
-    def validate_new_launch_arguments(cls, v: list[str]) -> list[str]:
-        return validate_launch_args(v)
-
     name: str = Field(min_length=1, max_length=255)
     fingerprint_seed: int | None = None
     group_id: str | None = None
@@ -499,23 +479,17 @@ class ProfileCreateRequest(BaseModel):
     locale: ProfileLocale | None = Field(default="en-US", max_length=64)
     screen_width: int = Field(default=1920, ge=100, le=10000)
     screen_height: int = Field(default=1080, ge=100, le=10000)
-    humanize: bool = True
-    human_preset: Literal["default", "careful"] = "default"
     geoip: bool = True
     clipboard_sync: bool = True
-    auto_launch: bool = False
     color_scheme: Literal["light", "dark"] = "light"
     fingerprint_platform: FingerprintPlatform = "windows"
     # None = derive from locale at creation (zh-CN on, otherwise off).
     include_cjk_fonts: bool | None = None
-    launch_args: list[str] = Field(default_factory=list)
     extension_paths: list[str] = Field(default_factory=list)
-    allow_3p_cookies: bool = True
     set_google_default: bool = True
     capture_preview: bool = True
     restore_session: bool = True
-    transparent_proxy: bool = False
-    portable_cookies: bool = True
+    mute_audio: bool = False
     notes: str | None = None
     sort_order: int = 0
 
@@ -551,10 +525,6 @@ class ProfileResetRequest(BaseModel):
 class ProfileUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    @field_validator("launch_args")
-    @classmethod
-    def validate_updated_launch_arguments(cls, v: list[str] | None) -> list[str] | None:
-        return None if v is None else validate_launch_args(v)
     name: str | None = Field(default=None, min_length=1, max_length=255)
     fingerprint_seed: int | None = None
     group_id: str | None = None
@@ -563,22 +533,16 @@ class ProfileUpdateRequest(BaseModel):
     locale: ProfileLocale | None = Field(default=None, max_length=64)
     screen_width: int | None = Field(default=None, ge=100, le=10000)
     screen_height: int | None = Field(default=None, ge=100, le=10000)
-    humanize: bool | None = None
-    human_preset: Literal["default", "careful"] | None = None
     geoip: bool | None = None
     clipboard_sync: bool | None = None
-    auto_launch: bool | None = None
     color_scheme: Literal["light", "dark"] | None = None
     fingerprint_platform: FingerprintPlatform | None = None
     include_cjk_fonts: bool | None = None
-    launch_args: list[str] | None = None
     extension_paths: list[str] | None = None
-    allow_3p_cookies: bool | None = None
     set_google_default: bool | None = None
     capture_preview: bool | None = None
     restore_session: bool | None = None
-    transparent_proxy: bool | None = None
-    portable_cookies: bool | None = None
+    mute_audio: bool | None = None
     notes: str | None = None
     sort_order: int | None = None
 
@@ -628,23 +592,17 @@ class ProfileResponse(BaseModel):
     locale: ProfileLocale | None = None
     screen_width: int = 1920
     screen_height: int = 1080
-    humanize: bool = True
-    human_preset: str = "default"
     geoip: bool = True
     clipboard_sync: bool = True
-    auto_launch: bool = False
     color_scheme: str = "light"
     fingerprint_platform: str = "windows"
     font_set_id: str | None = None
     include_cjk_fonts: bool = True
-    launch_args: list[str] = Field(default_factory=list)
     extension_paths: list[str] = Field(default_factory=list)
-    allow_3p_cookies: bool = True
     set_google_default: bool = True
     capture_preview: bool = True
     restore_session: bool = True
-    transparent_proxy: bool = False
-    portable_cookies: bool = True
+    mute_audio: bool = False
     notes: str | None = None
     user_data_dir: str
     sort_order: int = 0
@@ -669,23 +627,17 @@ class ProfileResponse(BaseModel):
             locale=cfg.locale,
             screen_width=cfg.screen_width,
             screen_height=cfg.screen_height,
-            humanize=cfg.humanize,
-            human_preset=cfg.human_preset,
             geoip=cfg.geoip,
             clipboard_sync=cfg.clipboard_sync,
-            auto_launch=cfg.auto_launch,
             color_scheme=cfg.color_scheme,
             fingerprint_platform=cfg.fingerprint_platform,
             font_set_id=cfg.font_set_id,
             include_cjk_fonts=cfg.include_cjk_fonts,
-            launch_args=cfg.launch_args,
             extension_paths=cfg.extension_paths,
-            allow_3p_cookies=cfg.allow_3p_cookies,
             set_google_default=cfg.set_google_default,
             capture_preview=cfg.capture_preview,
             restore_session=cfg.restore_session,
-            transparent_proxy=cfg.transparent_proxy,
-            portable_cookies=cfg.portable_cookies,
+            mute_audio=cfg.mute_audio,
             notes=cfg.notes,
             user_data_dir=p.user_data_dir,
             sort_order=p.sort_order,

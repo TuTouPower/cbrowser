@@ -88,20 +88,14 @@ async def test_profile_crud_roundtrip_with_refs(db_context):
         screen_width=1920,
         screen_height=1080,
         include_cjk_fonts=False,
-        humanize=True,
-        human_preset="careful",
         geoip=True,
         clipboard_sync=True,
-        auto_launch=False,
         color_scheme="dark",
-        launch_args=["--no-first-run", "--lang=en-US"],
         extension_paths=["/path/ext1"],
-        allow_3p_cookies=False,
         set_google_default=True,
         capture_preview=True,
         restore_session=True,
-        transparent_proxy=True,
-        portable_cookies=False,
+        mute_audio=True,
         notes="Important profile notes",
         sort_order=5,
     )
@@ -548,3 +542,11 @@ def test_models_match_migrations(temp_db_path: Path):
             await engine.dispose()
 
     assert asyncio.run(run()) == []
+
+
+def test_runtime_storage_defaults_target_uid_1000():
+    from cbrowser.adapters.filesystem.artifact_store import ArtifactStore
+    from cbrowser.services.profile_service import ProfileService
+
+    assert ArtifactStore("/tmp/unused-artifacts").runtime_uid == 1000
+    assert ProfileService(repo=None).runtime_uid == 1000  # type: ignore[arg-type]

@@ -83,11 +83,7 @@ def sanitize_config_summary(config: ProfileConfig) -> dict[str, Any]:
         "include_cjk_fonts": config.include_cjk_fonts,
         "fingerprint_seed": config.fingerprint_seed,
         "geoip": config.geoip,
-        "humanize": config.humanize,
-        "human_preset": config.human_preset,
-        "allow_3p_cookies": config.allow_3p_cookies,
-        "portable_cookies": config.portable_cookies,
-        "transparent_proxy": config.transparent_proxy,
+        "mute_audio": config.mute_audio,
         "has_proxy": bool(config.proxy_id),
         "color_scheme": config.color_scheme,
     }

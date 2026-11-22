@@ -21,8 +21,9 @@ REVISION_0013_PREDECESSOR = "d83a2c12b083"
 REVISION_0013 = "d75a0013f001"
 REVISION_LEGACY_HEAD = "d7e3a91f4c62"
 REVISION_0014_COMPENSATION = "e89a0014c001"
-# t094 appends the probe-job migration after the t089 head.
-REVISION_HEAD = "f1a2b3c4d5e6"
+REVISION_0015_PROBE = "f1a2b3c4d5e6"
+# t103 appends 0016 (profile option cleanup + mute_audio) after t094.
+REVISION_HEAD = "a10300160001"
 
 WIN_SET = "1" * 64
 MAC_SET = "2" * 64
@@ -531,7 +532,7 @@ def test_compensation_0014_blocks_unmappable_nested_entry_before_writes(
         conn.close()
 
 
-def test_compensation_0014_allows_clean_post0013_db_with_null_and_failed_font_sets(
+def test_compensation_0014_allows_clean_post0013_before_0016_and_t103_adds_mute_audio(
     tmp_path: Path,
 ) -> None:
     db = tmp_path / "clean_post0013.db"
@@ -603,6 +604,18 @@ def test_compensation_0014_allows_clean_post0013_db_with_null_and_failed_font_se
     finally:
         conn.close()
 
+    # Upgrades through 0014/0015 leave clean post-0013 snapshots byte-identical.
+    command.upgrade(get_alembic_config(db), REVISION_0015_PROBE)
+    conn = sqlite3.connect(db)
+    try:
+        mid = dict(
+            conn.execute("SELECT id, snapshot FROM profile_config_versions").fetchall()
+        )
+        assert mid == before
+    finally:
+        conn.close()
+
+    # Upgrading to head (0016 t103) adds explicit mute_audio=False cleanly and stays valid.
     run_database_migrations(db)
 
     conn = sqlite3.connect(db)
@@ -614,7 +627,10 @@ def test_compensation_0014_allows_clean_post0013_db_with_null_and_failed_font_se
         after = dict(
             conn.execute("SELECT id, snapshot FROM profile_config_versions").fetchall()
         )
-        assert after == before
+        for key, raw in after.items():
+            parsed = json.loads(raw)
+            assert parsed["config"]["mute_audio"] is False
+            ProfileConfig.model_validate(parsed["config"])
     finally:
         conn.close()
 

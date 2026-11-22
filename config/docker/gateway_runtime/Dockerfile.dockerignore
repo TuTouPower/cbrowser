@@ -1,7 +1,6 @@
 **
 !src/backend/cbrowser/__init__.py
 !src/backend/cbrowser/secret_files.py
-!src/backend/cbrowser/launch_args.py
 !src/backend/cbrowser/network_config.py
 !src/backend/cbrowser/shared/
 !src/backend/cbrowser/shared/*.py

@@ -299,22 +299,16 @@ def _profile_model(**overrides):
         screen_width=1920,
         screen_height=1080,
         include_cjk_fonts=True,
-        humanize=True,
-        human_preset="default",
         geoip=False,
         clipboard_sync=False,
-        auto_launch=False,
         color_scheme="light",
         fingerprint_platform="windows",
         font_set_id=None,
-        launch_args=json.dumps(["--load-extension=/tmp/evil"]),
         extension_paths="[]",
-        allow_3p_cookies=True,
         set_google_default=True,
         capture_preview=True,
         restore_session=True,
-        transparent_proxy=False,
-        portable_cookies=True,
+        mute_audio=False,
         notes=None,
         sort_order=0,
         display_number=7,
@@ -327,15 +321,10 @@ def _profile_model(**overrides):
     return SimpleNamespace(**fields)
 
 
-def test_repository_rejects_invalid_stored_launch_args_naming_profile():
-    with pytest.raises(RuntimeError, match="p-bad"):
-        ProfileRepository._to_domain_profile(_profile_model())
-
-
-def test_repository_loads_valid_stored_launch_args_verbatim():
-    model = _profile_model(launch_args=json.dumps(["--mute-audio", "--lang=en-US"]))
-    profile = ProfileRepository._to_domain_profile(model)
-    assert profile.config.launch_args == ["--mute-audio", "--lang=en-US"]
+def test_repository_loads_profile_model_with_mute_audio():
+    """t103 retired stored launch_args and added mute_audio on ProfileModel."""
+    profile = ProfileRepository._to_domain_profile(_profile_model(mute_audio=True))
+    assert profile.config.mute_audio is True
 
 
 # ------------------------------------------------------------ network cli

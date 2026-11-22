@@ -152,7 +152,7 @@ async def test_config_save_preserves_browser_state_directory(
                 "locale": "en-US",
                 "timezone": "America/New_York",
                 "include_cjk_fonts": False,
-                "humanize": False,
+                "mute_audio": True,
             },
         )
         assert updated.config.notes == "changed"
@@ -162,7 +162,7 @@ async def test_config_save_preserves_browser_state_directory(
         assert updated.config.screen_height == 900
         assert updated.config.locale == "en-US"
         assert updated.config.timezone == "America/New_York"
-        assert updated.config.humanize is False
+        assert updated.config.mute_audio is True
         assert updated.config.fingerprint_seed == 123456
         assert _manifest(profile_dir) == before
         assert (profile_dir / "Default" / "Cookies").read_bytes() == b"cookie-data"

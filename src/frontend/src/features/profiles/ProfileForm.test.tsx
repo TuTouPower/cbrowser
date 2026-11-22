@@ -99,23 +99,17 @@ function profile(overrides: Partial<ProfileResponse> = {}): ProfileResponse {
     locale: null,
     screen_width: 1920,
     screen_height: 1080,
-    humanize: false,
-    human_preset: "default",
     geoip: true,
     clipboard_sync: true,
-    auto_launch: false,
     color_scheme: "light",
     include_cjk_fonts: false,
     fingerprint_platform: "windows",
     font_set_id: null,
-    launch_args: [],
     extension_paths: [],
-    allow_3p_cookies: true,
     set_google_default: true,
     capture_preview: true,
     restore_session: true,
-    transparent_proxy: false,
-    portable_cookies: false,
+    mute_audio: false,
     notes: null,
     user_data_dir: "/data/p1",
     sort_order: 0,
@@ -211,28 +205,39 @@ describe("ProfileForm", () => {
 
 
 
-  it("submits the new advanced-option defaults in the create form", async () => {
-    const onSubmit = vi.fn(async () => undefined);
+  it("submits cleaned advanced-option defaults with mute_audio off and supports toggling mute_audio (t103)", async () => {
+    const onSubmit = vi.fn(async (_payload: unknown) => undefined);
     renderForm({ mode: "create", stub: makeStub(), onSubmit });
     fireEvent.change(screen.getByTestId("profile-form-name"), {
       target: { value: "Defaults" },
     });
     fireEvent.click(screen.getByTestId("profile-form-submit"));
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
-    expect(onSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        humanize: true,
-        portable_cookies: true,
-        transparent_proxy: false,
-        auto_launch: false,
-        allow_3p_cookies: true,
-        set_google_default: true,
-        clipboard_sync: true,
-        restore_session: true,
-        capture_preview: true,
-        locale: "en-US",
-      }),
-    );
+    const submitted = onSubmit.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(submitted).toMatchObject({
+      clipboard_sync: true,
+      set_google_default: true,
+      restore_session: true,
+      mute_audio: false,
+      capture_preview: true,
+      locale: "en-US",
+    });
+    for (const removed of [
+      "humanize",
+      "human_preset",
+      "auto_launch",
+      "allow_3p_cookies",
+      "transparent_proxy",
+      "portable_cookies",
+      "launch_args",
+    ]) {
+      expect(removed in submitted).toBe(false);
+    }
+
+    fireEvent.click(screen.getByRole("checkbox", { name: en.formMuteAudio }));
+    fireEvent.click(screen.getByTestId("profile-form-submit"));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2));
+    expect(onSubmit.mock.calls[1]?.[0]).toMatchObject({ mute_audio: true });
   });
 
   it("links language to the timezone and allows a manual override", async () => {
@@ -770,21 +775,15 @@ describe("ProfileForm (t077)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("every advanced option and extra parameter field has a keyboard-readable help trigger (AC-006)", async () => {
+  it("active advanced options and extension_paths carry bilingual help triggers with mute_audio and restore_session boundaries (t103)", async () => {
     renderForm({ mode: "create", stub: makeStub() });
     await screen.findByTestId("profile-form-name");
     const fields = [
-      en.formHumanize,
       en.formClipboardSync,
-      en.formAutoLaunch,
-      en.formAllow3pCookies,
       en.formSetGoogleDefault,
       en.formRestoreSession,
-      en.formTransparentProxy,
-      en.formPortableCookies,
+      en.formMuteAudio,
       en.formCapturePreview,
-      en.formHumanPreset,
-      en.formLaunchArgs,
       en.formExtensionPaths,
     ];
     for (const field of fields) {
@@ -794,14 +793,29 @@ describe("ProfileForm (t077)", () => {
         }),
       ).toBeInTheDocument();
     }
-    // Keyboard focus opens the tooltip with the real help text.
-    const humanizeHelp = screen.getByRole("button", {
-      name: en.formShowHelp.replace("{field}", en.formHumanize),
+    for (const removedLabel of [
+      "Humanize",
+      "Auto launch",
+      "Allow 3rd-party cookies",
+      "Transparent proxy",
+      "Portable cookies",
+      "Human preset",
+      "Launch args",
+    ]) {
+      expect(screen.queryByText(removedLabel)).not.toBeInTheDocument();
+    }
+    // Keyboard focus opens the tooltip with the real help text for mute_audio.
+    const muteHelp = screen.getByRole("button", {
+      name: en.formShowHelp.replace("{field}", en.formMuteAudio),
     });
-    fireEvent.focus(humanizeHelp);
+    fireEvent.focus(muteHelp);
     expect(await screen.findByRole("tooltip")).toHaveTextContent(
-      en.formHumanizeHelp,
+      en.formMuteAudioHelp,
     );
+    expect(en.formRestoreSessionHelp).toContain("--restore-last-session");
+    expect(en.formRestoreSessionHelp).toContain("Continue where you left off");
+    expect(zh.formRestoreSessionHelp).toContain("--restore-last-session");
+    expect(zh.formRestoreSessionHelp).toContain("启动时继续浏览上次打开的网页");
   });
 
   it("seed input is compact and the reseed button sits on the label row (AC-002)", async () => {
@@ -817,14 +831,7 @@ describe("ProfileForm (t077)", () => {
     );
   });
 
-  it("every select trigger fills its field width so a long value truncates instead of overflowing the column (AC-001/AC-007)", async () => {
-    // Chrome sizes a button's width:auto to its content even with
-    // display:flex, so a bare trigger in a narrow grid cell blows
-    // out to its full text width (real browser: 954px in a 256px
-    // box) instead of truncating. The form's selects carry w-full
-    // so they fill their grid cell and the truncate span inside can
-    // shrink. (Geometry itself is proven by the t077 browser
-    // probe's long-value scene; this pins the class at each site.)
+  it("every active select trigger fills its field width so a long value truncates cleanly (t103)", async () => {
     renderForm({ mode: "create", stub: makeStub() });
     await screen.findByTestId("profile-form-name");
     for (const name of [
@@ -833,7 +840,6 @@ describe("ProfileForm (t077)", () => {
       en.formLocale,
       en.formPlatform,
       en.formColorScheme,
-      en.formHumanPreset,
     ]) {
       const trigger = screen.getByRole("combobox", { name });
       expect(trigger.className).toContain("w-full");

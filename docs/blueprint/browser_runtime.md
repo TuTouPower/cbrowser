@@ -84,7 +84,7 @@ Xvfb 使用 Profile 分辨率、24位色深，启用 MIT-SHM/XTEST/XFIXES，关�
 
 PulseAudio 固定48000Hz与 cbrowser_sink，采集源为 cbrowser_sink.monitor。Runner 在 /run/cbrowser/runtime/pulse 生成 Socket/cookie；Stream 只挂载这个子目录，不能取得含 agent.sock、runner_info.json 的整个运行卷。相同 UID 可能绕过 cookie 校验，因此跨 Profile 隔离依赖专属挂载和 IPC，不能只依赖 cookie；不同 UID 错误凭据须实际拒绝（d011）。同 Profile XShm 需加入 Browser IPC，跨 IPC 必须验证 XShmAttach BadAccess，普通 X11 查询不等于 XShm 捕获。
 
-配置消费 t002 不可变快照；身份、版本与配置先校验再创建目录或启动进程。受控 launch_args 不允许覆盖 CDP、用户数据、显示尺寸与危险进程启动参数，日志不回显原始拒绝参数。Google 默认搜索仅在首次成功初始化时经现有 context 设置页面完成，原子 marker 防止重启覆盖用户后续选择，不创建第二个浏览器。
+配置消费 t002 不可变快照；身份、版本与配置先校验再创建目录或启动进程。t103 起通用 `launch_args` 与 `cbrowser/launch_args.py` 已全面退役，Runner 不再传递 `--fingerprint-allow-3p-cookies` / `--fingerprint-transparent-proxy` / `--fingerprint-portable-cookies` 或 `humanize` / `human_preset`，仅按显式布尔字段注入 `--mute-audio`（`mute_audio=True`）与 `--restore-last-session`（`restore_session=True`）。在固定目标引擎 146 实测：Web 请求按 `locale` 主语言与有序回退发送（`en-US` → `Accept-Language: en-US,en;q=0.9`、`navigator.languages=["en-US"]`；`zh-CN` → `zh-CN,zh;q=0.9`、`["zh-CN"]`），Chrome 内置页面（`chrome://settings` 等）保持英文；`restore_session` 开/关 × 原生 `Preferences.session.restore_on_startup`（1/5）四格对照显示，开启 `restore_session` 时始终恢复上次标签页，关闭时不再注入参数并遵循原生偏好设置。Google 默认搜索仅在首次成功初始化时经现有 context 设置页面完成，原子 marker 防止重启覆盖用户后续选择，不创建第二个浏览器。
 
 ## UDS 与下载协议
 

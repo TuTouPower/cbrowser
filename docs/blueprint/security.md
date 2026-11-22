@@ -159,5 +159,5 @@
 
 - 部署资源（容器、网络、孤儿 helper）的认领与删除只依据一个证据：`com.cbrowser.instance-id` 标签与 Supervisor 配置的部署实例 ID 相等。标签缺失、配置缺失或 ID 不匹配一律不认领、不删除；不存在按名称/前缀/compose project 的回退认领，deploy.sh 的前缀冲突检查也不再豁免「标签缺失但 project 匹配」的存量容器。
 - 部署身份是启动前提：Supervisor 启动入口对缺失/空的部署实例 ID 直接失败，先于任何 Docker 客户端构造与资源变更；运行期不存在「未配置即全认领」的降级模式。
-- 持久化输入在加载边界严格拒绝：Profile 存量 `launch_args` 不在白名单内时，加载即报错并指名 Profile，要求先修复数据再启动；任何层都不得静默过滤、截断或改写存量输入。
+- 持久化与 API 输入在边界严格拒绝（t103 更新）：通用 `launch_args` 与六个无效开关已完全退役并删除 `cbrowser/launch_args.py`；写入边界 `extra="forbid"` 对任一已删除键返回 422 零写入，前向迁移 `0016` 在修改 schema 或数据前对全部表行与历史快照做只读盘点，存在不可归并参数或损坏快照即 fail-before-write 中止；任何层都不得静默忽略或降级容忍未知输入。
 - viewer 身份只有一个文档化来源（宿主页 `?profileId=`）：URL 的其他参数名与全局变量注入都不是身份来源，出现即拒绝，防止 iframe 内页面自带身份越权到其他 Profile。

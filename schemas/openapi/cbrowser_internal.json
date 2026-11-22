@@ -9137,16 +9137,6 @@
             "title": "Screen Height",
             "default": 1080
           },
-          "humanize": {
-            "type": "boolean",
-            "title": "Humanize",
-            "default": true
-          },
-          "human_preset": {
-            "type": "string",
-            "title": "Human Preset",
-            "default": "default"
-          },
           "geoip": {
             "type": "boolean",
             "title": "Geoip",
@@ -9156,11 +9146,6 @@
             "type": "boolean",
             "title": "Clipboard Sync",
             "default": true
-          },
-          "auto_launch": {
-            "type": "boolean",
-            "title": "Auto Launch",
-            "default": false
           },
           "color_scheme": {
             "type": "string",
@@ -9187,24 +9172,12 @@
             "title": "Include Cjk Fonts",
             "default": true
           },
-          "launch_args": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Launch Args"
-          },
           "extension_paths": {
             "items": {
               "type": "string"
             },
             "type": "array",
             "title": "Extension Paths"
-          },
-          "allow_3p_cookies": {
-            "type": "boolean",
-            "title": "Allow 3P Cookies",
-            "default": true
           },
           "set_google_default": {
             "type": "boolean",
@@ -9221,15 +9194,10 @@
             "title": "Restore Session",
             "default": true
           },
-          "transparent_proxy": {
+          "mute_audio": {
             "type": "boolean",
-            "title": "Transparent Proxy",
+            "title": "Mute Audio",
             "default": false
-          },
-          "portable_cookies": {
-            "type": "boolean",
-            "title": "Portable Cookies",
-            "default": true
           },
           "notes": {
             "anyOf": [
@@ -9461,20 +9429,6 @@
             "title": "Screen Height",
             "default": 1080
           },
-          "humanize": {
-            "type": "boolean",
-            "title": "Humanize",
-            "default": true
-          },
-          "human_preset": {
-            "type": "string",
-            "enum": [
-              "default",
-              "careful"
-            ],
-            "title": "Human Preset",
-            "default": "default"
-          },
           "geoip": {
             "type": "boolean",
             "title": "Geoip",
@@ -9484,11 +9438,6 @@
             "type": "boolean",
             "title": "Clipboard Sync",
             "default": true
-          },
-          "auto_launch": {
-            "type": "boolean",
-            "title": "Auto Launch",
-            "default": false
           },
           "color_scheme": {
             "type": "string",
@@ -9518,24 +9467,12 @@
             ],
             "title": "Include Cjk Fonts"
           },
-          "launch_args": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Launch Args"
-          },
           "extension_paths": {
             "items": {
               "type": "string"
             },
             "type": "array",
             "title": "Extension Paths"
-          },
-          "allow_3p_cookies": {
-            "type": "boolean",
-            "title": "Allow 3P Cookies",
-            "default": true
           },
           "set_google_default": {
             "type": "boolean",
@@ -9552,15 +9489,10 @@
             "title": "Restore Session",
             "default": true
           },
-          "transparent_proxy": {
+          "mute_audio": {
             "type": "boolean",
-            "title": "Transparent Proxy",
+            "title": "Mute Audio",
             "default": false
-          },
-          "portable_cookies": {
-            "type": "boolean",
-            "title": "Portable Cookies",
-            "default": true
           },
           "notes": {
             "anyOf": [
@@ -9859,16 +9791,6 @@
             "title": "Screen Height",
             "default": 1080
           },
-          "humanize": {
-            "type": "boolean",
-            "title": "Humanize",
-            "default": true
-          },
-          "human_preset": {
-            "type": "string",
-            "title": "Human Preset",
-            "default": "default"
-          },
           "geoip": {
             "type": "boolean",
             "title": "Geoip",
@@ -9878,11 +9800,6 @@
             "type": "boolean",
             "title": "Clipboard Sync",
             "default": true
-          },
-          "auto_launch": {
-            "type": "boolean",
-            "title": "Auto Launch",
-            "default": false
           },
           "color_scheme": {
             "type": "string",
@@ -9909,24 +9826,12 @@
             "title": "Include Cjk Fonts",
             "default": true
           },
-          "launch_args": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Launch Args"
-          },
           "extension_paths": {
             "items": {
               "type": "string"
             },
             "type": "array",
             "title": "Extension Paths"
-          },
-          "allow_3p_cookies": {
-            "type": "boolean",
-            "title": "Allow 3P Cookies",
-            "default": true
           },
           "set_google_default": {
             "type": "boolean",
@@ -9943,15 +9848,10 @@
             "title": "Restore Session",
             "default": true
           },
-          "transparent_proxy": {
+          "mute_audio": {
             "type": "boolean",
-            "title": "Transparent Proxy",
+            "title": "Mute Audio",
             "default": false
-          },
-          "portable_cookies": {
-            "type": "boolean",
-            "title": "Portable Cookies",
-            "default": true
           },
           "notes": {
             "anyOf": [
@@ -10609,32 +10509,6 @@
             ],
             "title": "Screen Height"
           },
-          "humanize": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Humanize"
-          },
-          "human_preset": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "default",
-                  "careful"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Human Preset"
-          },
           "geoip": {
             "anyOf": [
               {
@@ -10656,17 +10530,6 @@
               }
             ],
             "title": "Clipboard Sync"
-          },
-          "auto_launch": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Auto Launch"
           },
           "color_scheme": {
             "anyOf": [
@@ -10709,20 +10572,6 @@
             ],
             "title": "Include Cjk Fonts"
           },
-          "launch_args": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Launch Args"
-          },
           "extension_paths": {
             "anyOf": [
               {
@@ -10736,17 +10585,6 @@
               }
             ],
             "title": "Extension Paths"
-          },
-          "allow_3p_cookies": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Allow 3P Cookies"
           },
           "set_google_default": {
             "anyOf": [
@@ -10781,7 +10619,7 @@
             ],
             "title": "Restore Session"
           },
-          "transparent_proxy": {
+          "mute_audio": {
             "anyOf": [
               {
                 "type": "boolean"
@@ -10790,18 +10628,7 @@
                 "type": "null"
               }
             ],
-            "title": "Transparent Proxy"
-          },
-          "portable_cookies": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Portable Cookies"
+            "title": "Mute Audio"
           },
           "notes": {
             "anyOf": [

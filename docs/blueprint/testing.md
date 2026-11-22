@@ -31,7 +31,7 @@ project_configured
 
 - t026 reconciliation 故障矩阵（本机已验，真实环境义务归 t032 AC-009）：Gateway 替换重附着（unit 收敛双测 + adapter 双测）、网络事件唤醒扫描（runner 代码路径，真实事件流归 t032）、API 离线只恢复附着（unit）、协议拒绝结构化与不可修复分类（真实 Gateway 集成）、地址冲突与池耗尽（adapter 双测按 d029 行为建模 + e2e 真实 Docker 用例）、规格迁移 Stream-only 替换（unit）、策略漂移 Stream 替换/Browser fail-closed（unit + network_policy 渲染-校验全等单测）、并发与幂等（收敛预算与 fail-close 单次语义 unit）、恢复失败预算耗尽（unit）。真实 Docker 用例在 `tests/e2e/test_supervisor_reconciliation_e2e.py`（daemon 与 `CBROWSER_RUNTIME_TEST_IMAGE` 门控，本机无 Docker 时跳过、不得记为已验）；全栈场景（真实 Gateway 镜像拒绝、容器内 netns 漂移、API 进程离线）在 t032 以 REQUIRED_E2E_ENV 镜像集与 supervisor_recovery_probe fixtures 实跑。
 
-- t066 环境数据与恢复点验证矩阵（云端已验，真实部署往返为 [deploy] 顺延项）：Profile 状态守卫单测（seed 单一空间与幂等推导、残留 runtime 实例绑定拒绝 duplicate/reset、普通配置保存不触碰状态目录清单）与既有 copy/reset 套件；恢复点工具单测以真实迁移 DB + 伪造实环境覆盖成套往返（配置版本/seed/Cookie 字节回到恢复点）、损坏 payload 与损坏 DB 拒绝且活数据不变、schema stamp 跨代拒绝、空间不足拒绝、恢复点外新增目录按集移除并保留旧集、空站点恢复、中断切换（journal 停在 pending + live 已移开）回滚后重跑完成。OSCrypt/portable_cookies 结论来自真实引擎一次性 spike（Chromium 146，见 task t066 未知契约清单回填）。隔离真实部署中的备份→变更→恢复往返与指南命令实跑属 [deploy]，不在云端冒充。
+- t066 环境数据与恢复点验证矩阵（云端已验，真实部署往返为 [deploy] 顺延项）：Profile 状态守卫单测（seed 单一空间与幂等推导、残留 runtime 实例绑定拒绝 duplicate/reset、普通配置保存不触碰状态目录清单）与既有 copy/reset 套件；恢复点工具单测以真实迁移 DB + 伪造实环境覆盖成套往返（配置版本/seed/Cookie 字节回到恢复点）、损坏 payload 与损坏 DB 拒绝且活数据不变、schema stamp 跨代拒绝、空间不足拒绝、恢复点外新增目录按集移除并保留旧集、空站点恢复、中断切换（journal 停在 pending + live 已移开）回滚后重跑完成。OSCrypt 结论来自真实引擎一次性 spike（Chromium 146，见 task t066 未知契约清单回填，`portable_cookies` 选项已于 t103 退役）。隔离真实部署中的备份→变更→恢复往返与指南命令实跑属 [deploy]，不在云端冒充。
 
 - t027 发布验收矩阵（云端已验，真实环境义务归 t032 AC-009）：生产脚本 `scripts/deploy.sh` 由 fake Docker CLI 在仓库副本中实跑（`tests/unit/test_t027_release_controller.py`），覆盖每镜像只构建一次、六镜像 ID 与指纹/manifest 固定、缺管理员密码先失败列缺项、内部密钥 0600 生成且秘密不出现在输出/manifest/env、up 失败与 readiness 未收敛时上一 release 保持 current、相同配置重复发布幂等且无 restart、prefix 异项目冲突启动前拒绝（全量 ps -a 按名/标签归属）、回退成功与回退拒绝（迁移版本过低/无 readiness 能力时零 up 调用）、回退采用目标 release 身份而非调用方 shell 环境、失败发布已应用迁移版本抬高回退下限、探针 reconcile 以验收截止为超时且 report 模式只读不触发 reconcile；readiness 探针 `scripts/supervisor_readiness_probe.py` 对真实 Supervisor 控制面（stub core）走真实 HTTP 集成（`tests/integration/test_t027_readiness_probe.py`）；Gateway 健康路由走真实 Gateway harness 集成；构建上下文门禁对任一运行时镜像缺失 ignore 规则失败、且断言 data/secrets/.scratch 永不被任一白名单接纳。真实冷构建、重复发布、回退与双实例并存演练在 t032 按 `DOCKER_DEPLOYMENT.md` 的演练步骤实跑，云端 fake 结果不得记为真实部署 PASS。
 
@@ -529,7 +529,7 @@ bash scripts/run_automation_probe.sh
 - 归属与输入拒绝以 fake Docker 的「先拒绝后零变更」验证：缺失/空/
     不匹配 instance-id 的候选在 scan、prune、孤儿清理、网络认领四条
     路径均零删除零认领；Supervisor 启动缺部署身份在任何 Docker 动作
-    前失败；存量非法 `launch_args` 在 repository 加载边界指名拒绝。
+    前失败；存量非法 `launch_args` 在 repository 加载边界指名拒绝（t103 起由写入 422 退役与 `0016` 盘点零写入阻断门禁承接）。
     真实 Docker 拓扑验收（合法资源恢复清理、无标签资源保持未动）
     属 [deploy] 层，不以 mock 证据替代，顺延登记见 p095。
 
@@ -579,3 +579,9 @@ t094 移除探测容器沙箱后，测速正确性与防泄露证据由两条互
 - 全部 Docker E2E 拓扑夹具（`GatewayTopologyHarness`、`RealSupervisorContainer`、`RealApiProcess`、`conftest.py::real_api_server`）与独立容器驱动测试统一通过 `tests/fixtures/e2e_volumes.py` 构造 `<prefix>-{db,data,runtime,fonts}` 命名卷与最小平台字体集（优先复用 `CBROWSER_E2E_FONTS_DIR`，缺失时从不可变 Browser 镜像提取基础字体），保持 `MountPlanner` 与 `FontSetUnavailableError` fail-closed 逻辑不被绕过。
 - macOS VirtioFS 无法从宿主机 `connect()` 容器创建的 Unix domain socket，涉及策略与 spool/x11 验证的 E2E 改为通过 named volume subpath + Linux 辅助容器入口（`ContainerPolicyAgentClient`、`SpoolDirectoryWatcher`、`run_volume_json`）执行，且结束及门禁清理阶段按 `com.cbrowser.prefix` / `com.cbrowser.gate-run` 精确清理容器、网络与命名卷。
 - `tests/unit/test_a36_socket_path_sync.py` 与 `tests/unit/test_baseline_fixture_regressions.py` 已将失效的 bind-mount 前提用例整体替换为对 `e2e_volumes` 命名卷布局、前缀隔离回收及清理器卷归属规则的单元测试。
+
+## 无效高级选项清理、`launch_args` 退役与前向迁移/发布门禁（t103）
+
+- **契约与 UI 门禁**：`tests/unit/test_t103_retire_options_and_runner.py` 与 `tests/integration/test_t103_profile_cleanup_api.py` 验证六个无效字段与通用 `launch_args` 从 ORM/领域模型/DTO/API/Runner/OpenAPI/前端生成类型彻底移除，POST/PATCH/PUT 提交任一已删除键均返回 422 且零写入，并验证显式 `mute_audio`（默认 `False`）在 Runner 上下文的 `--mute-audio` / `--restore-last-session` 透传；前端 `ProfileForm.test.tsx` 验证表单默认值、`mute_audio` 切换及 `restore_session` 中英文边界说明。
+- **盘点、零写入阻断与 DDL/DML 原子性**：`tests/unit/test_t103_launch_args_migration.py` 构造含平铺与 `{config, proxy_credential_revision}` 包装快照、全部冗余项、`--disable-translate`、`AutomationControlled`、`--mute-audio`、语言夹具矩阵与阻断项的合成库，验证未决项与坏快照 fail-before-write 零写入、DDL/DML 中途故障注入后 schema/行/快照/`alembic_version` 整体回滚、`upgrade head` 幂等与独立重算零漂移；`test_t103_profile_cleanup_api.py` 验证绑定 `N` ≠ 当前 `N+1` 的在跑接管、Supervisor 按目标版本写 `snapshot.json`、历史版本读取与两态克隆。
+- **真实引擎与隔离发布演练（`[deploy]`）**：以重建 Docker 镜像在隔离环境中直接实测固定 `146.0.7680.177.3` Web 主语言与有序回退（`Accept-Language` / `navigator.languages` 与内置英文边界）、同一 440Hz 确定音源在 PulseAudio `cbrowser_sink.monitor` 上的静音全零 vs 有声正负对照、`restore_session` 开/关 × 原生 `Preferences.session.restore_on_startup`（1/5）四格对照，以及通过真实 `scripts/deploy.sh` 执行旧 release → 新 release 升级、在跑实例接管（旧镜像保持运行，重启切新镜像与新 `snapshot.json`）、停写恢复前导备份再跨 revision 回退匹配旧 release 并通过 readiness 验收。

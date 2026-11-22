@@ -158,7 +158,7 @@ def test_browser_image_omits_unrelated_service_entries() -> None:
 def test_required_runtime_features_present() -> None:
     copied = _copied_toplevel()
     assert {
-        "__init__.py", "launch_args.py", "preview.py", "domain", "font_sets",
+        "__init__.py", "preview.py", "domain", "font_sets",
         "runtime_agent",
     } <= copied
     for package, files in FEATURE_FILES.items():
