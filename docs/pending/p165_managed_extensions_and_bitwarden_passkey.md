@@ -1,7 +1,10 @@
 ---
 pid: "p165"
 slug: "managed_extensions_and_bitwarden_passkey"
-status: "todo"
+status: "closed"
+resolution: "transferred"
+reason: "已核实范围并转交 t104（承接受管扩展资产、显式权限、扩展 ID 连续性迁移、四态/自由模式与 Bitwarden Passkey 支持）"
+fix_ref: "t104"
 ---
 # p165 支持受控多扩展与容器内 Bitwarden Passkey（方案一）
 
@@ -64,4 +67,4 @@ status: "todo"
 
 - 相关条目：`p166`（Profile 高级选项无效/版本错位字段与 `launch_args` 债务清理）
 - 测试环境备忘：验证期间在本地实例建有 `0088`（`c9a0f33a-941a-44a6-9c62-5bbc807c275e` / `US-EN-Bitwarden-Test`）。
-- 处理：未开
+- 处理：t104；resolution=transferred；reason=已核实范围并转交 t104（承接受管扩展资产、显式权限、扩展 ID 连续性迁移、四态/自由模式与 Bitwarden Passkey 支持）
