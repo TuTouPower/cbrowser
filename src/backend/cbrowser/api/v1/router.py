@@ -315,11 +315,8 @@ async def create_profile(
         locale=payload.locale,
         screen_width=payload.screen_width,
         screen_height=payload.screen_height,
-        humanize=payload.humanize,
-        human_preset=payload.human_preset,
         geoip=payload.geoip,
         clipboard_sync=payload.clipboard_sync,
-        auto_launch=payload.auto_launch,
         color_scheme=payload.color_scheme,
         fingerprint_platform=payload.fingerprint_platform,
         include_cjk_fonts=(
@@ -327,14 +324,11 @@ async def create_profile(
             if payload.include_cjk_fonts is not None
             else default_include_cjk_fonts(payload.locale)
         ),
-        launch_args=payload.launch_args,
         extension_paths=payload.extension_paths,
-        allow_3p_cookies=payload.allow_3p_cookies,
         set_google_default=payload.set_google_default,
         capture_preview=payload.capture_preview,
         restore_session=payload.restore_session,
-        transparent_proxy=payload.transparent_proxy,
-        portable_cookies=payload.portable_cookies,
+        mute_audio=payload.mute_audio,
         notes=payload.notes,
         sort_order=payload.sort_order,
     )

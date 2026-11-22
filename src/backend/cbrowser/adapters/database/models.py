@@ -205,15 +205,8 @@ class ProfileModel(Base):
     locale: Mapped[str | None] = mapped_column(String(64), nullable=True)
     screen_width: Mapped[int] = mapped_column(Integer, default=1920, nullable=False)
     screen_height: Mapped[int] = mapped_column(Integer, default=1080, nullable=False)
-    humanize: Mapped[bool] = mapped_column(
-        Boolean, default=True, server_default="1", nullable=False
-    )
-    human_preset: Mapped[str] = mapped_column(
-        String(32), default="default", nullable=False
-    )
     geoip: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     clipboard_sync: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    auto_launch: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # t075: exactly "light" / "dark"; migration 0013 backfills legacy
     # null / "no-preference" rows to "light" before tightening.
     color_scheme: Mapped[str] = mapped_column(
@@ -228,11 +221,7 @@ class ProfileModel(Base):
     include_cjk_fonts: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="1", nullable=False
     )
-    launch_args: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     extension_paths: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
-    allow_3p_cookies: Mapped[bool] = mapped_column(
-        Boolean, default=True, nullable=False
-    )
     set_google_default: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False
     )
@@ -241,11 +230,8 @@ class ProfileModel(Base):
         Integer, default=0, nullable=False
     )
     restore_session: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    transparent_proxy: Mapped[bool] = mapped_column(
-        Boolean, default=False, nullable=False
-    )
-    portable_cookies: Mapped[bool] = mapped_column(
-        Boolean, default=True, server_default="1", nullable=False
+    mute_audio: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     user_data_dir: Mapped[str] = mapped_column(String(1024), nullable=False)

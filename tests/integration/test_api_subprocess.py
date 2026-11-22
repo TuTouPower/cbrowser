@@ -226,20 +226,14 @@ async def test_ac001_and_ac005_crud_restart_and_empty_dir_init_with_refs(
             "screen_width": 1440,
             "screen_height": 900,
             "include_cjk_fonts": False,
-            "humanize": True,
-            "human_preset": "careful",
             "geoip": False,
             "clipboard_sync": True,
-            "auto_launch": True,
             "color_scheme": "dark",
-            "launch_args": ["--no-first-run", "--disable-sync"],
             "extension_paths": ["/opt/extensions/adblock"],
-            "allow_3p_cookies": False,
             "set_google_default": False,
             "capture_preview": False,
             "restore_session": False,
-            "transparent_proxy": True,
-            "portable_cookies": True,
+            "mute_audio": True,
             "notes": "Top secret profile notes",
             "sort_order": 12,
         }
@@ -255,7 +249,7 @@ async def test_ac001_and_ac005_crud_restart_and_empty_dir_init_with_refs(
         assert created["fingerprint_seed"] >= 100000
         assert created["group_id"] is None
         assert created["proxy_id"] is None
-        assert created["transparent_proxy"] is True
+        assert created["mute_audio"] is True
         assert created["sort_order"] == 12
         assert created["current_config_version"] == 1
 
@@ -321,10 +315,8 @@ async def test_ac001_and_ac005_crud_restart_and_empty_dir_init_with_refs(
         assert reloaded["screen_width"] == 1440
         assert reloaded["screen_height"] == 900
         assert reloaded["include_cjk_fonts"] is False
-        assert reloaded["humanize"] is True
-        assert reloaded["human_preset"] == "careful"
+        assert reloaded["mute_audio"] is True
         assert reloaded["sort_order"] == 12
-        assert reloaded["transparent_proxy"] is True
 
         # 4. Delete profile
         del_res = await client.delete(f"/api/v1/profiles/{pid}")

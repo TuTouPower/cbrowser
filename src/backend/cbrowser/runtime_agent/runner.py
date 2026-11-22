@@ -23,7 +23,6 @@ from cbrowser.engine_artifacts import (
     enforce_pinned_engine_env,
     verify_extracted_engine_cache,
 )
-from cbrowser.launch_args import validate_launch_args
 from cbrowser.shared.egress_plan import (
     PROXY_CREDENTIALS_CHANGED,
     ProfileEgressPlan,
@@ -448,11 +447,6 @@ class BrowserRunner:
             env["FONTCONFIG_FILE"] = str(fontconfig_path)
         return env
 
-    @staticmethod
-    def validate_launch_arguments(args: list[str] | None) -> list[str]:
-        """Second launch-argument gate applied immediately before launch."""
-        return validate_launch_args(args)
-
     # Chromium Preferences values for the native shell theme (spike
     # s027, verified on the pinned engine): 1 = light, 2 = dark.
     _NATIVE_COLOR_SCHEMES = {"light": 1, "dark": 2}
@@ -645,9 +639,6 @@ class BrowserRunner:
             pulse_sock, pulse_cookie, wrapper_path, self.fontconfig_path
         )
 
-        # Second validation gate: the API already rejects non-whitelisted args.
-        safe_user_args = validate_launch_args(cfg.launch_args)
-
         extra_args: list[str] = [
             "--no-sandbox",
             "--disable-dev-shm-usage",
@@ -673,16 +664,11 @@ class BrowserRunner:
         # (spike s026); the old hand-picked vendor flag was passed
         # through with no validation and is abolished.
 
-        if cfg.allow_3p_cookies:
-            extra_args.append("--fingerprint-allow-3p-cookies")
-        if cfg.transparent_proxy:
-            extra_args.append("--fingerprint-transparent-proxy")
-        if cfg.portable_cookies:
-            extra_args.append("--fingerprint-portable-cookies")
+        if cfg.mute_audio:
+            extra_args.append("--mute-audio")
         if cfg.restore_session:
             extra_args.append("--restore-last-session")
 
-        extra_args.extend(safe_user_args)
         extra_args.extend(egress_plan.extra_browser_args)
 
         logger.info(
@@ -706,8 +692,6 @@ class BrowserRunner:
                 args=extra_args,
                 timezone=cfg.timezone,
                 locale=cfg.locale,
-                humanize=cfg.humanize,
-                human_preset=cfg.human_preset,
                 geoip=cfg.geoip,
                 color_scheme=cfg.color_scheme,
                 extension_paths=cfg.extension_paths or None,

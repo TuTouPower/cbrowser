@@ -4,7 +4,6 @@
 !config/docker/browser_runtime/entrypoint.sh
 !src/backend/cbrowser/__init__.py
 !src/backend/cbrowser/engine_artifacts.py
-!src/backend/cbrowser/launch_args.py
 !src/backend/cbrowser/preview.py
 !src/backend/cbrowser/secret_files.py
 !src/backend/cbrowser/domain/*.py

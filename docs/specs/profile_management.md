@@ -1,7 +1,7 @@
 ---
 slug: profile_management
 status: active
-tasks: [baseline, t075, t076, t077, t078, t079, t090, t094, t095, t098, t099, t101]
+tasks: [baseline, t075, t076, t077, t078, t079, t090, t094, t095, t098, t099, t101, t103]
 ---
 # 需求规范：Profile 管理与外部标签页
 
@@ -26,10 +26,10 @@ tasks: [baseline, t075, t076, t077, t078, t079, t090, t094, t095, t098, t099, t1
 ## 表单布局与长集合选择交互（t077）
 
 - 创建/编辑表单（`ProfileForm`）的分区按弹窗实际可用宽度规划，不再按外部视口断点切列：表单为容器查询根（`@container`），Section 在容器宽 ≥24rem 时两列、≥36rem 时三列；时区/语言、配色/CJK 为直接网格项，不再嵌套半列；字段占宽明确（种子输入 `w-seed` 5rem、6 位数字不裁切，刷新按钮在标签行）。普通/窄/低高度窗口与中英长文本下字段不重叠、不越出表单，提交/取消可达。
-- 固定少量枚举（状态/平台/排序/协议/语言/配色/拟人化预设）用有界 `Select`（长值单行截断 + `title` 回显全名，触发器在表单格内 `w-full`）；增长型实体（代理/环境/分组/国家/城市）用可搜索选择 `SearchableSelect`（顶部搜索框 + 完整候选数组客户端过滤 + Enter 选首个匹配），选择身份始终是稳定 ID，不与显示名称/排序混用；候选来自 t076 的有界端点（首 50 条 + 已选值单读回显）。200 代理与 100 分组/地区候选下列表内部滚动、滚轮可达末项、搜索可找到未加载末项、选中值准确回显。
+- 固定少量枚举（状态/平台/排序/协议/语言/配色）用有界 `Select`（长值单行截断 + `title` 回显全名，触发器在表单格内 `w-full`）；增长型实体（代理/环境/分组/国家/城市）用可搜索选择 `SearchableSelect`（顶部搜索框 + 完整候选数组客户端过滤 + Enter 选首个匹配），选择身份始终是稳定 ID，不与显示名称/排序混用；候选来自 t076 的有界端点（首 50 条 + 已选值单读回显）。200 代理与 100 分组/地区候选下列表内部滚动、滚轮可达末项、搜索可找到未加载末项、选中值准确回显。
 - 共享浮层契约：`Select`/`Popover` 内容限高为 Radix 可用高度（`max-h-available-height`，`--radix-popper-available-height`），内容区内部滚动、定位与碰撞翻转走 Radix；`Popover` 内容为纵向 flex 列 + 内部滚动区；长列表的键盘（方向键/Home/End/Enter 提交/Escape 关闭/焦点回归）与 p070/t053 的既有提交判据保持不变，同值重选只触发一次既有提交语义。时区候选走 Radix Popover Portal（锚定输入框，`side="bottom"` + 碰撞翻转），不再被外层 Dialog 滚动区裁切。
 - 批量移动分组菜单（`MoveGroupMenu`）为锚定到移动按钮的 Popover（搜索 + 内部滚动 + 键盘导航 + Escape 焦点回归），取代旧的页面底部固定菜单；100 分组下在常规与 400px 低视口中均受实际可用视口约束。环境切换器列表内部滚动；关联环境浮层（`ProxyUsedByPopover`）列表内部滚动。分组管理弹窗与外层 Dialog 保持既有内部滚动，末项与提交可达。
-- 全部高级布尔选项（拟人化、自动启动、Google 默认、透明代理、预览、剪贴板、第三方 Cookie、恢复会话、便携 Cookie）与拟人化预设、启动参数、扩展路径字段旁均有可聚焦的感叹号帮助入口，鼠标与键盘均可读到当前界面语言的说明，内容与实际运行行为一致。注意：`auto_launch` 当前无任何消费点（后端/前端均不读取），帮助文案如实写“保存但当前不触发任何自动启动”；实现或删除该字段不在 t077 范围内，待另行定夺。
+- 全部有效高级布尔选项（剪贴板同步、设 Google 为默认、恢复会话、静音启动、采集预览）与扩展路径字段旁均有可聚焦的感叹号帮助入口，鼠标与键盘均可读到当前界面语言的说明，内容与实际运行行为一致。其中：`restore_session` 帮助明确说明开启时注入 `--restore-last-session`，关闭时不注入该参数，但若浏览器原生设置开启了「启动时继续浏览上次打开的网页」（`Preferences.session.restore_on_startup=1`）仍会恢复会话。六个无效历史高级字段与 `launch_args` 已由 t103 删除。
 
 ## 删除生命周期（t078）
 
@@ -39,10 +39,9 @@ tasks: [baseline, t075, t076, t077, t078, t079, t090, t094, t095, t098, t099, t1
 - 列表与卡片共用操作定义：停止与删除独立呈现，删除固定最右且 danger 样式，运行行删除表示「先停止再删除」；环境管理页头不再显示运行数量统计，表格不再有最后活跃列（相对时间仅卡片保留）。
 - 单项与批量删除共用居中模态：确认前不发请求，确认目标集合在打开时冻结（翻页/筛选不漂移），进度与逐项结果在弹窗内呈现，失败项保留阶段、错误与重试入口；成功项从选择中移除，失败项保留。批量不再逐个调用单删接口。
 
-## 启动参数校验与 PATCH 三态（t021）
+## 扩展路径校验与 PATCH 三态（t021，t103 修订）
 
-- 更新 DTO 对 `launch_args` / `extension_paths` 只做严格校验（条数、单条长度、危险参数拒绝），不再在校验阶段过滤合法条目；历史行读取同样严格（t069）：存量 `launch_args` 不合法时加载即拒绝并指名 Profile，不再静默过滤。
-- PATCH 语义三态：字段缺失 = 不变；显式 `null` = 清空为 `[]`；给出列表 = 整体替换。`ProfileConfig` 把显式 null 的这两个列表归一为 `[]`，仓储合并不得因此 500；越界内容返回 422。
+- 通用 `launch_args` 与六个无效开关已由 t103 退役删除（创建/更新提交任意已删除键一律 422 零写入）。`extension_paths` 保留当前严格校验（条数、单条长度、安全规则拒绝）与 PATCH 三态语义（缺失=不变、显式 `null`=清空为 `[]`、给出列表=整体替换）；受管扩展资产接管留待 `t104`（`p165`）承接。
 
 ## 页面独立选择
 
@@ -101,9 +100,10 @@ tasks: [baseline, t075, t076, t077, t078, t079, t090, t094, t095, t098, t099, t1
 - `font_bundle`（文泉驿三档）已删除：字段、镜像字体包、代码、文档与测试引用一并清理（AC-009）。
 - runtime 响应与 SSE 下发实际使用的 `font_set_id` 与 `missing_fonts`（t075 起读 Runner 启动前验证结论，不逐请求重扫）；绑定字体集缺失或 manifest / 文件不一致时启动失败封闭 `font_set_unavailable`，未绑定同样失败封闭（AC-006 / AC-007，旧 null 正常启动语义废止）。
 
-## 语言、时区与参数自动对齐（t053+）
+## 语言、时区与参数自动对齐（t053+，t103 清理修订）
 
-- 新建 Profile 默认值：`humanize` 与 `portable_cookies` 开启；`transparent_proxy` 与 `auto_launch` 关闭；`allow_3p_cookies` / `set_google_default` / `clipboard_sync` / `restore_session` / `capture_preview` 开启。前后端与 ORM 默认值一致，OpenAPI 与前端类型重新生成；既有 Profile 的已存值在升级后不变。
+- 新建 Profile 默认值（t103 清理后）：`mute_audio` 默认关闭（`false`）；`set_google_default` / `clipboard_sync` / `restore_session` / `capture_preview` 默认开启；无效字段 `humanize` / `human_preset` / `auto_launch` / `allow_3p_cookies` / `transparent_proxy` / `portable_cookies` 与 `launch_args` 已整体移除。前后端与 ORM 默认值一致，OpenAPI 与前端类型重新生成。
+- 固定引擎 146 实测行为边界：Web 请求与 JS 接口以 `locale` 为主语言并带有序回退（`en-US` → HTTP `Accept-Language: en-US,en;q=0.9`、`navigator.languages=["en-US"]`；`zh-CN` → `zh-CN,zh;q=0.9`、`["zh-CN"]`），Chrome 内置界面（如 `chrome://settings` / `chrome://version`）受上游英文包边界保持英文。`mute_audio=true` 注入 `--mute-audio` 使 PulseAudio 监测输出全零；`restore_session` 通过 `--restore-last-session` 与 Chrome 原生 `Preferences.session.restore_on_startup` 协同生效。
 - 语言只支持 `zh-CN` / `en-US`（新建默认 `en-US`），后端校验拒绝其它值与非法时区，返回字段级错误；时区为空表示自动（随出口 IP）。
 - 时区 → 语言：中文地区时区（`Asia/Shanghai`、`Asia/Chongqing`、`Asia/Urumqi`、`Asia/Harbin`、`Asia/Hong_Kong`、`Asia/Macau`、`Asia/Taipei`）→ `zh-CN`，其余 → `en-US`；时区为空时语言保持当前值。
 - 代理 / 语言 / 平台参数自动联动：
@@ -146,9 +146,9 @@ tasks: [baseline, t075, t076, t077, t078, t079, t090, t094, t095, t098, t099, t1
 - 指纹 seed 单一空间 100000..999999：创建、普通 reset、幂等 reset 同源；operation_id 经 SHA-256 确定性推导，重放同 seed，已保存 seed 不追溯改写。
 - include-state clone 逐字复制（跳过 Singleton rendezvous 文件）并以 manifest 全等校验；引擎无按 Profile 锚定的 OSCrypt 密钥根（t066 spike 实测 Chromium 146），不删 Local State。
 
-## launch_args 单一严格校验（t069）
+## 无效高级选项与通用 launch_args 退役（t103，取代 t069 launch_args 白名单）
 
-- `launch_args` 全系统只有 `validate_launch_args` 一处校验：创建、更新与持久化加载（`ProfileConfig`）共用；删除原加载侧的静默过滤（`filter_launch_args`）。存量行含白名单外参数时，repository 加载即抛指名该 Profile 的错误，要求先修复数据；合法的 locale/timezone None 自动推导与 PATCH 缺省语义不变。
+- 领域模型、ORM、API 请求/响应 DTO 与运行器已整体移除 `humanize` / `human_preset` / `auto_launch` / `allow_3p_cookies` / `transparent_proxy` / `portable_cookies` / `launch_args`，并删除 `cbrowser/launch_args.py` 与死 `--fingerprint-*` 参数注入；POST/PATCH/PUT 提交任一已删除键均在严格边界返回 422 零写入。前向迁移 `0016_retire_profile_options_and_launch_args.py`（`a10300160001`）以只读全库盘点做 fail-before-write，将 `--mute-audio` 等价映射为 `mute_audio=True`、有效单语言映射为枚举 `locale`、冗余项直接折叠，遇未知或损坏项阻断零写入。
 
 ## 状态呈现（t079）
 

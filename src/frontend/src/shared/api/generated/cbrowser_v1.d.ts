@@ -1490,16 +1490,6 @@ export interface components {
              */
             screen_height: number;
             /**
-             * Humanize
-             * @default true
-             */
-            humanize: boolean;
-            /**
-             * Human Preset
-             * @default default
-             */
-            human_preset: string;
-            /**
              * Geoip
              * @default true
              */
@@ -1509,11 +1499,6 @@ export interface components {
              * @default true
              */
             clipboard_sync: boolean;
-            /**
-             * Auto Launch
-             * @default false
-             */
-            auto_launch: boolean;
             /**
              * Color Scheme
              * @default light
@@ -1528,15 +1513,8 @@ export interface components {
              * @default true
              */
             include_cjk_fonts: boolean;
-            /** Launch Args */
-            launch_args?: string[];
             /** Extension Paths */
             extension_paths?: string[];
-            /**
-             * Allow 3P Cookies
-             * @default true
-             */
-            allow_3p_cookies: boolean;
             /**
              * Set Google Default
              * @default true
@@ -1553,15 +1531,10 @@ export interface components {
              */
             restore_session: boolean;
             /**
-             * Transparent Proxy
+             * Mute Audio
              * @default false
              */
-            transparent_proxy: boolean;
-            /**
-             * Portable Cookies
-             * @default true
-             */
-            portable_cookies: boolean;
+            mute_audio: boolean;
             /** Notes */
             notes?: string | null;
             /** User Data Dir */
@@ -1658,17 +1631,6 @@ export interface components {
              */
             screen_height: number;
             /**
-             * Humanize
-             * @default true
-             */
-            humanize: boolean;
-            /**
-             * Human Preset
-             * @default default
-             * @enum {string}
-             */
-            human_preset: "default" | "careful";
-            /**
              * Geoip
              * @default true
              */
@@ -1678,11 +1640,6 @@ export interface components {
              * @default true
              */
             clipboard_sync: boolean;
-            /**
-             * Auto Launch
-             * @default false
-             */
-            auto_launch: boolean;
             /**
              * Color Scheme
              * @default light
@@ -1696,15 +1653,8 @@ export interface components {
             fingerprint_platform?: "windows" | "macos";
             /** Include Cjk Fonts */
             include_cjk_fonts?: boolean | null;
-            /** Launch Args */
-            launch_args?: string[];
             /** Extension Paths */
             extension_paths?: string[];
-            /**
-             * Allow 3P Cookies
-             * @default true
-             */
-            allow_3p_cookies: boolean;
             /**
              * Set Google Default
              * @default true
@@ -1721,15 +1671,10 @@ export interface components {
              */
             restore_session: boolean;
             /**
-             * Transparent Proxy
+             * Mute Audio
              * @default false
              */
-            transparent_proxy: boolean;
-            /**
-             * Portable Cookies
-             * @default true
-             */
-            portable_cookies: boolean;
+            mute_audio: boolean;
             /** Notes */
             notes?: string | null;
             /**
@@ -1840,16 +1785,6 @@ export interface components {
              */
             screen_height: number;
             /**
-             * Humanize
-             * @default true
-             */
-            humanize: boolean;
-            /**
-             * Human Preset
-             * @default default
-             */
-            human_preset: string;
-            /**
              * Geoip
              * @default true
              */
@@ -1859,11 +1794,6 @@ export interface components {
              * @default true
              */
             clipboard_sync: boolean;
-            /**
-             * Auto Launch
-             * @default false
-             */
-            auto_launch: boolean;
             /**
              * Color Scheme
              * @default light
@@ -1878,15 +1808,8 @@ export interface components {
              * @default true
              */
             include_cjk_fonts: boolean;
-            /** Launch Args */
-            launch_args?: string[];
             /** Extension Paths */
             extension_paths?: string[];
-            /**
-             * Allow 3P Cookies
-             * @default true
-             */
-            allow_3p_cookies: boolean;
             /**
              * Set Google Default
              * @default true
@@ -1903,15 +1826,10 @@ export interface components {
              */
             restore_session: boolean;
             /**
-             * Transparent Proxy
+             * Mute Audio
              * @default false
              */
-            transparent_proxy: boolean;
-            /**
-             * Portable Cookies
-             * @default true
-             */
-            portable_cookies: boolean;
+            mute_audio: boolean;
             /** Notes */
             notes?: string | null;
             /** User Data Dir */
@@ -2118,38 +2036,26 @@ export interface components {
             screen_width?: number | null;
             /** Screen Height */
             screen_height?: number | null;
-            /** Humanize */
-            humanize?: boolean | null;
-            /** Human Preset */
-            human_preset?: ("default" | "careful") | null;
             /** Geoip */
             geoip?: boolean | null;
             /** Clipboard Sync */
             clipboard_sync?: boolean | null;
-            /** Auto Launch */
-            auto_launch?: boolean | null;
             /** Color Scheme */
             color_scheme?: ("light" | "dark") | null;
             /** Fingerprint Platform */
             fingerprint_platform?: ("windows" | "macos") | null;
             /** Include Cjk Fonts */
             include_cjk_fonts?: boolean | null;
-            /** Launch Args */
-            launch_args?: string[] | null;
             /** Extension Paths */
             extension_paths?: string[] | null;
-            /** Allow 3P Cookies */
-            allow_3p_cookies?: boolean | null;
             /** Set Google Default */
             set_google_default?: boolean | null;
             /** Capture Preview */
             capture_preview?: boolean | null;
             /** Restore Session */
             restore_session?: boolean | null;
-            /** Transparent Proxy */
-            transparent_proxy?: boolean | null;
-            /** Portable Cookies */
-            portable_cookies?: boolean | null;
+            /** Mute Audio */
+            mute_audio?: boolean | null;
             /** Notes */
             notes?: string | null;
             /** Sort Order */

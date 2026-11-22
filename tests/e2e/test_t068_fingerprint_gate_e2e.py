@@ -310,9 +310,9 @@ def test_ac001_ac002_ac006_real_engine_gate_detects_controlled_timezone_drift(
         "screen_width": 1280,
         "screen_height": 800,
         "geoip": False,
-        "humanize": False,
         "set_google_default": False,
         "restore_session": False,
+        "mute_audio": False,
     }
 
     baseline = _run_container_measure(

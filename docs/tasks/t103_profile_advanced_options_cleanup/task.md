@@ -45,11 +45,11 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：六个已证实无效的字段（`humanize`、`human_preset`、`auto_launch`、`allow_3p_cookies`、`transparent_proxy`、`portable_cookies`）在数据库模型、领域模型、API 响应、导出契约、运行时配置快照、指纹探针摘要及管理表单与翻译中彻底移除；向环境创建或更新接口提交任一已删除字段时，按严格契约返回 422 校验错误。
-- [ ] AC-002：迁移前对当前行与全部历史配置版本快照完成只读盘点，为当前行和每个历史版本记录有效值与处置（至少区分冗余、等价映射、需裁决）；存在未解决项时迁移阻断并断言 DB schema、业务行与快照零改写；对带 `--mute-audio` 的当前行和历史快照验证迁入开启态，对无静音旧版本和新建环境验证默认关闭；语言夹具覆盖显式 `locale`、`locale=null` 配合 `geoip` 开关、多值 `--accept-lang`、重复项（GeoIP 提升取首匹配、同键合并取末项）与超枚举项，且明确记录 `AutomationControlled` 与外部 API 消费需求裁决；若完全退役则创建/更新传 `launch_args` 键返回 422，若确证独立需求保留小白名单则 `launch_args` 键合法、已撤回数组项返回 422 且合法含逗号值经实际表单保存、读取、再编辑后数组完整不变。
-- [ ] AC-004：以旧 release 真实 schema stamp 构造升级库（涵盖平铺/包装快照及损坏或未解决数据），验证发现阻断项零业务写入，且注入 DDL/DML 中途故障时 schema、行、快照与 `alembic_version` stamp 一并回退；迁移后保留配置版本标识、绑定版本、`proxy_credential_revision` 与用户数据，再跑 `upgrade head` 及独立重算盘点/变换无漂移；以绑定 `N` ≠ 当前 `N+1` 对照验证升级接管（保留旧实例运行与 `N < N+1` 待应用）、Supervisor 新建实例向 API 拉取指定版本写 `snapshot.json`（含显式 `N` 版本启动与读取、协调器常规最新/应用重启选 `N+1`）及仅配置/含状态克隆后的运行意愿与绑定一致性。
-- [ ] [deploy] AC-005：在固定目标浏览器引擎的真实有头容器拓扑中验证保留项行为：语言以 Web 主语言与有序回退规则验收（`en-US` → HTTP `Accept-Language: en-US,en;q=0.9`、`navigator.languages` 为 `["en-US"]`；`zh-CN` → `zh-CN,zh;q=0.9`、`["zh-CN"]`），并明确记录内置界面保持英文的原生边界；以同一确定音源和同一音频监测端正负对照验证迁移开启态静音输出全零与默认关闭态有声；以两个带标记标签对照 `restore_session` 开/关 × 原生 `Preferences` 恢复开/关的四格行为并确认中英文帮助文案与之一致。
-- [ ] [deploy] AC-007：在隔离真实部署拓扑中执行旧版→新版 release 升级、在跑环境接管（旧实例保持运行，重启或应用变更后切至新版镜像与新 `snapshot.json`）与跨 revision 回退演练（先停新版写入并恢复迁移前数据库备份至旧 stamp，再按匹配旧 release 与 `compose.yaml` 启动旧版并通过 readiness 验收），确认旧 stamp、数据与 Profile 可用。
+- [x] AC-001：六个已证实无效的字段（`humanize`、`human_preset`、`auto_launch`、`allow_3p_cookies`、`transparent_proxy`、`portable_cookies`）在数据库模型、领域模型、API 响应、导出契约、运行时配置快照、指纹探针摘要及管理表单与翻译中彻底移除；向环境创建或更新接口提交任一已删除字段时，按严格契约返回 422 校验错误。
+- [x] AC-002：迁移前对当前行与全部历史配置版本快照完成只读盘点，为当前行和每个历史版本记录有效值与处置（至少区分冗余、等价映射、需裁决）；存在未解决项时迁移阻断并断言 DB schema、业务行与快照零改写；对带 `--mute-audio` 的当前行和历史快照验证迁入开启态，对无静音旧版本和新建环境验证默认关闭；语言夹具覆盖显式 `locale`、`locale=null` 配合 `geoip` 开关、多值 `--accept-lang`、重复项（GeoIP 提升取首匹配、同键合并取末项）与超枚举项，且明确记录 `AutomationControlled` 与外部 API 消费需求裁决；若完全退役则创建/更新传 `launch_args` 键返回 422，若确证独立需求保留小白名单则 `launch_args` 键合法、已撤回数组项返回 422 且合法含逗号值经实际表单保存、读取、再编辑后数组完整不变。
+- [x] AC-004：以旧 release 真实 schema stamp 构造升级库（涵盖平铺/包装快照及损坏或未解决数据），验证发现阻断项零业务写入，且注入 DDL/DML 中途故障时 schema、行、快照与 `alembic_version` stamp 一并回退；迁移后保留配置版本标识、绑定版本、`proxy_credential_revision` 与用户数据，再跑 `upgrade head` 及独立重算盘点/变换无漂移；以绑定 `N` ≠ 当前 `N+1` 对照验证升级接管（保留旧实例运行与 `N < N+1` 待应用）、Supervisor 新建实例向 API 拉取指定版本写 `snapshot.json`（含显式 `N` 版本启动与读取、协调器常规最新/应用重启选 `N+1`）及仅配置/含状态克隆后的运行意愿与绑定一致性。
+- [x] [deploy] AC-005：在固定目标浏览器引擎的真实有头容器拓扑中验证保留项行为：语言以 Web 主语言与有序回退规则验收（`en-US` → HTTP `Accept-Language: en-US,en;q=0.9`、`navigator.languages` 为 `["en-US"]`；`zh-CN` → `zh-CN,zh;q=0.9`、`["zh-CN"]`），并明确记录内置界面保持英文的原生边界；以同一确定音源和同一音频监测端正负对照验证迁移开启态静音输出全零与默认关闭态有声；以两个带标记标签对照 `restore_session` 开/关 × 原生 `Preferences` 恢复开/关的四格行为并确认中英文帮助文案与之一致。
+- [x] [deploy] AC-007：在隔离真实部署拓扑中执行旧版→新版 release 升级、在跑环境接管（旧实例保持运行，重启或应用变更后切至新版镜像与新 `snapshot.json`）与跨 revision 回退演练（先停新版写入并恢复迁移前数据库备份至旧 stamp，再按匹配旧 release 与 `compose.yaml` 启动旧版并通过 readiness 验收），确认旧 stamp、数据与 Profile 可用。
 
 ### 可测试性声明
 
@@ -88,7 +88,10 @@
 
 <!-- /规范 -->
 
-- 存量数据库 `launch_args` 分布与外部 API 消费情况（含 `--mute-audio`、`--accept-lang`、GeoIP 提升 `--lang`、超枚举语言、`AutomationControlled` 及是否仍存在独立原始参数提交需求）：`UNVERIFIED-SPIKE`，在动表结构前运行只读分类盘点并核查已知 API 消费方，确定退役方案或小白名单备选以及需用户裁决的等价映射后回填结论再实施。
+- 存量数据库 `launch_args` 分布与外部 API 消费情况（含 `--mute-audio`、`--accept-lang`、GeoIP 提升 `--lang`、超枚举语言、`AutomationControlled` 及是否仍存在独立原始参数提交需求）：**已核实（2026-11-22 只读盘点 + 仓内源码扫描 + 固定 146 二进制检查 + 用户裁决）**。
+    1. 线上运行库（`/data/db/cbrowser.db`，`alembic_version=f1a2b3c4d5e6`，5 个 Profile `#84`–`#88` 与 6 条全包装 `profile_config_versions` 快照）、近期备份与遗留 `data/v2/cbrowser.db` 中 `launch_args` 全部为 `[]`（0 条非空、0 条损坏）。
+    2. 全仓 `scripts/`、`docs/`、`tests/` 与 `src/` 无外部脚本或自动化工作流向 API 提交 `launch_args`；固定 146 `chrome` 二进制含 `accept-lang`/`mute-audio`/`AutomationControlled`，不含 `disable-translate`，且 `0088` 实跑命令行不传 `--disable-blink-features=AutomationControlled` 时 `navigator.webdriver` 已为 `false`（`p166` 开关对照两态一致）。
+    3. 用户明确裁决：**完全退役 `launch_args`**（创建/更新传 `launch_args` 键返回 422，不再采用小白名单），**保留显式 `mute_audio`（「静音启动」，默认 `false`）开关**，**语言统一由封闭枚举 `locale`（`zh-CN` / `en-US`）收口**，**`--disable-blink-features=AutomationControlled` 按 `冗余` 直接归并**；合成迁移夹具仍按 `AC-002` / `AC-004` 验证 `冗余`/`等价映射`/`需裁决`（未知参数、超枚举或非等价多语 `--accept-lang`、损坏快照）阻断零写入与原子回滚。
 
 ### 风险与回退
 

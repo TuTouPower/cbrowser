@@ -47,21 +47,8 @@ def api_client(tmp_path: Path):
         yield client
 
 
-def test_create_defaults_humanize_and_portable_cookies(api_client) -> None:
-    response = api_client.post("/api/v1/profiles", json={"name": "Defaults"})
-    assert response.status_code == 201, response.text
-    body = response.json()
-    assert body["humanize"] is True
-    assert body["portable_cookies"] is True
-    assert body["transparent_proxy"] is False
-    assert body["auto_launch"] is False
-    assert body["allow_3p_cookies"] is True
-    assert body["set_google_default"] is True
-    assert body["clipboard_sync"] is True
-    assert body["restore_session"] is True
-    assert body["capture_preview"] is True
-    assert body["locale"] == "en-US"
-    assert body["timezone"] is None
+# t103 retired humanize/portable_cookies/transparent_proxy/auto_launch/allow_3p_cookies;
+# active defaults including mute_audio are verified in test_t103_profile_cleanup_api.py.
 
 
 def test_create_rejects_other_locales(api_client) -> None:

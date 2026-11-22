@@ -92,36 +92,9 @@ def test_invalid_timezones_rejected(tz: str) -> None:
     assert is_valid_timezone(tz) is False
 
 
-def test_new_profile_defaults() -> None:
-    config = ProfileConfig(name="Defaults")
-    assert config.humanize is True
-    assert config.portable_cookies is True
-    # Every other advanced option keeps its previous default.
-    assert config.transparent_proxy is False
-    assert config.auto_launch is False
-    assert config.allow_3p_cookies is True
-    assert config.set_google_default is True
-    assert config.clipboard_sync is True
-    assert config.restore_session is True
-    assert config.capture_preview is True
-    assert config.geoip is True
-    assert config.human_preset == "default"
-
-
-def test_create_request_defaults() -> None:
-    req = ProfileCreateRequest(name="Defaults")
-    assert req.humanize is True
-    assert req.portable_cookies is True
-    assert req.transparent_proxy is False
-    assert req.auto_launch is False
-    assert req.allow_3p_cookies is True
-    assert req.set_google_default is True
-    assert req.clipboard_sync is True
-    assert req.restore_session is True
-    assert req.capture_preview is True
-    assert req.geoip is True
-    assert req.locale == "en-US"
-    assert req.timezone is None
+# t103 retired humanize/human_preset/auto_launch/allow_3p_cookies/transparent_proxy/portable_cookies
+# (removed obsolete t053 default-flip tests test_new_profile_defaults, test_create_request_defaults,
+# test_existing_profile_values_unchanged_by_upgrade, test_new_profile_stored_with_new_defaults).
 
 
 def test_create_request_rejects_other_locales() -> None:
@@ -168,36 +141,6 @@ def test_domain_config_rejects_invalid_locale_and_timezone() -> None:
     # Legacy nulls still load: existing stored values are unchanged.
     assert ProfileConfig(name="Legacy", locale=None).locale is None
     assert ProfileConfig(name="Legacy", timezone=None).timezone is None
-
-
-@pytest.mark.asyncio
-async def test_existing_profile_values_unchanged_by_upgrade(db_context) -> None:
-    """AC-002: an explicitly stored False stays False after the default flip."""
-    from cbrowser.adapters.database.repository import ProfileRepository
-
-    _engine, session_maker = db_context
-    repo = ProfileRepository(session_maker)
-    legacy = await repo.create_profile(
-        ProfileConfig(name="Legacy", humanize=False, portable_cookies=False)
-    )
-    assert legacy.config.humanize is False
-    assert legacy.config.portable_cookies is False
-    reloaded = await repo.get_profile(legacy.id)
-    assert reloaded is not None
-    assert reloaded.config.humanize is False
-    assert reloaded.config.portable_cookies is False
-
-
-@pytest.mark.asyncio
-async def test_new_profile_stored_with_new_defaults(db_context) -> None:
-    from cbrowser.adapters.database.repository import ProfileRepository
-
-    _engine, session_maker = db_context
-    repo = ProfileRepository(session_maker)
-    profile = await repo.create_profile(ProfileConfig(name="New"))
-    assert profile.config.humanize is True
-    assert profile.config.portable_cookies is True
-    assert profile.config.locale is None
 
 
 def test_empty_timezone_means_unset_everywhere() -> None:

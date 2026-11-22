@@ -26,6 +26,7 @@
 |**中文字体开关**|`ProfileConfig.include_cjk_fonts`|中文字体是否对 Browser 可见的显式开关；创建未给出时按语言派生（`zh-CN` 开、其余关），运行时 fontconfig 的中文裁剪只看此开关。属运行配置，变更产生新 `ProfileConfigVersion`（t075）。|
 |**配色方案**|`ProfileConfig.color_scheme`|只允许 `light` / `dark`（默认 `light`）；旧 `null` / `no-preference` 已由迁移 0013 统一映射为 `light`。属运行配置（t075 收敛）；同一值同时派生网页配色偏好与浏览器原生外壳主题（t099）。|
 |**语言**|`ProfileConfig.locale`|Profile 的浏览器语言，封闭枚举 `zh-CN` / `en-US`（新建默认 `en-US`）。属运行配置，变更产生新 `ProfileConfigVersion`，重启后生效（t053）。|
+|**静音启动**|`ProfileConfig.mute_audio`|Profile 的音频静音开关（默认 `False`），开启时注入 `--mute-audio`。属运行配置，变更产生新 `ProfileConfigVersion`（t103，替代 `--mute-audio` 启动参数）。|
 |**时区**|`ProfileConfig.timezone`|Profile 的时区，合法 IANA 时区名或 null（null 表示自动、随出口 IP）；非法时区在写入边界 422 拒绝。时区只决定语言联动的输入，不直接决定浏览器时区以外的行为（t053）。|
 
 ## 状态转换规则
@@ -42,10 +43,10 @@
     - 连接身份由官方 `client_tab_id` 维护，页面刷新保留该身份并生成新 `resume_key`；仅连接内断线重连复用原 `resume_key`。
     - 关闭任一外部标签页不影响同一 Profile 的其他连接，也不关闭底层浏览器进程。
 
-## 字段校验、null 与时间语义（t021）
+## 字段校验、null 与时间语义（t021，t103 修订）
 
-- **更新请求的校验时机**：Profile 更新 DTO（`ProfileUpdateRequest`）对 `launch_args` / `extension_paths` 只做严格校验（条数、单条长度、危险参数拒绝），不在校验阶段过滤或改写合法条目；历史数据的读取侧过滤（`ProfileConfig`）保持不变，继续保证旧数据可读。
-- **PATCH 三态语义**：列表字段缺失（absent）表示不变；显式 `null` 表示清空为 `[]`；给出列表表示整体替换。`ProfileConfig` 对显式 null 的 `launch_args` / `extension_paths` 归一为 `[]`，仓储合并路径不得把 null 直接送入领域模型（曾导致 500）。
+- **更新与持久化边界严格校验**：六个无效历史选项与通用 `launch_args` 已由 t103 退役删除（提交即 422 零写入）。`ProfileUpdateRequest` 与 `ProfileConfig` 对 `extension_paths` 保持严格校验（条数、单条长度、安全规则拒绝，详见后续 `t104`）。
+- **PATCH 三态语义**：`extension_paths` 缺失（absent）表示不变；显式 `null` 表示清空为 `[]`；给出列表表示整体替换。`ProfileConfig` 对显式 null 的 `extension_paths` 归一为 `[]`，仓储合并路径不得把 null 直接送入领域模型（曾导致 500）。
 - **时间语义**：全仓唯一的当前时间实现是 `cbrowser.domain.models.utc_now_iso`；适配层模型不得再定义同名本地实现，SQLAlchemy 列默认值直接引用领域实现。
 - **期望/观测状态词汇**：内部 runtime 响应与事件 DTO 的 `desired_state` / `observed_state` 使用领域枚举 `DesiredState` / `ObservedState`，OpenAPI 中呈现为封闭 enum，未知状态值在 DTO 边界即被拒绝，不再以自由文本透传。
 
@@ -128,7 +129,8 @@
 - **语言是封闭枚举**：`ProfileConfig.locale` / `ProfileCreateRequest.locale` / `ProfileUpdateRequest.locale` / `ProfileResponse.locale` 的类型为 `ProfileLocale = Literal["zh-CN", "en-US"]`，OpenAPI 呈现为封闭 enum，非法值在 DTO 边界即 422 拒绝（字段级错误）。数据库层迁移 `0007_profile_locale_enum_defaults.py`（revision `1a8db6b91744`）追加 `CHECK (locale IS NULL OR locale IN ('zh-CN', 'en-US'))`；存量行的 `locale` 一律不改写（历史遗留 null 照常读取，仍可通过 PATCH 改为枚举值）。
 - **时区校验**：`timezone` 只接受合法 IANA 时区名或 null（null 表示自动、随出口 IP）；非法时区名在写入边界 422 拒绝。校验以 `zoneinfo` 为准（`domain/profile_locale.py` 的 `validate_timezone`）。
 - **时区 → 语言规则**：中文地区时区集合 `{Asia/Shanghai, Asia/Chongqing, Asia/Urumqi, Asia/Harbin, Asia/Hong_Kong, Asia/Macau, Asia/Taipei}` → `zh-CN`，其余合法时区 → `en-US`；时区为空时语言保持当前值。规则由后端 `domain/profile_locale.py` 的 `locale_for_timezone` 定义，前端 `features/profiles/profile_locale.ts` 逐项镜像，两侧单测保证一致（同一规则来源的两种实现，不存在第三份真相）。
-- **新建默认值**：`humanize` 与 `portable_cookies` 默认开启；其余高级选项默认值不变——`transparent_proxy` / `auto_launch` 关闭，`allow_3p_cookies` / `set_google_default` / `clipboard_sync` / `restore_session` / `capture_preview` 开启。三端一致：后端 `ProfileConfig` / `ProfileCreateRequest` / `ProfileResponse`、ORM（Python 默认 + `server_default`）、前端 `DEFAULT_PROFILE_CREATE_VALUES`；由后端单测与前端提交单测固定。迁移 `0007` 只改 server default，不改写既有 Profile 的已存值。
+- **新建默认值（t103 清理修订）**：`mute_audio` 默认关闭（`False`）；`set_google_default` / `clipboard_sync` / `restore_session` / `capture_preview` 默认开启；无效字段 `humanize` / `human_preset` / `auto_launch` / `allow_3p_cookies` / `transparent_proxy` / `portable_cookies` 与通用 `launch_args` 已从模型、数据库与表单移除。三端一致：后端 `ProfileConfig` / `ProfileCreateRequest` / `ProfileResponse`、ORM（Python 默认 + `server_default`）、前端 `DEFAULT_PROFILE_CREATE_VALUES`；由后端单测与前端提交单测固定。
+- **迁移处置规则与 `restore_session` 协同优先级（t103）**：前向迁移 `0016` 将存量 `--mute-audio` 映射为 `mute_audio=True`、合法单语言映射为 `zh-CN`/`en-US`（`GeoIP=True` 仅在无显式 `locale` 时提升首项 `--lang`，均无冲突时归并 `--accept-lang`）、冗余开关及 `--disable-blink-features=AutomationControlled` 按 `冗余` 折叠，未知参数或损坏快照在写入前 0 写入阻断。`restore_session=True` 注入 `--restore-last-session`（即使用户原生偏好设为新标签页亦恢复会话），`restore_session=False` 不注入该参数；若 Chrome 原生 `Preferences.session.restore_on_startup=1`（继续浏览上次打开的网页），浏览器原生偏好仍生效。
 - **语言属运行配置**：`locale` 变更生成新 `ProfileConfigVersion`，重启后字体可见性与 `navigator.language` 按新语言生效。`geoip` 默认开启，但语言恒为显式值，不被出口 IP 推断覆盖（CloakBrowser 显式 `locale` 是否优先于出口 IP 推断，仍待真实引擎验证，见 t053 未知契约清单）。
 - **引擎噪声策略**：Runner 关闭 Canvas、WebGL 和音频的引擎注入噪声，保留环境种子与平台字段。网站可读取更稳定的渲染和音频信号，相应的抗跨站关联能力会变化（t086）。
 

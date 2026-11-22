@@ -23,25 +23,10 @@ from cbrowser.runtime_agent.protocol import (
     RuntimeStateRecord,
 )
 from cbrowser.runtime_agent.runner import BrowserRunner
-from cbrowser.launch_args import InvalidLaunchArgument, validate_launch_args
 from cbrowser.runtime_agent.subsystems import check_audio, check_browser, check_display
 
 
-def test_launch_args_whitelist_contract() -> None:
-    safe = ["--no-first-run", "--lang=en-US", "--accept-lang=en-US,zh-CN"]
-    assert validate_launch_args(safe) == safe
-
-    for arg in (
-        "--load-extension=/tmp/evil",
-        "--js-flags=--noopt",
-        "file:///etc/passwd",
-        "--fingerprint=123",
-        "--window-size=800,600",
-        "--no-sandbox",
-        "--disable-web-security",
-    ):
-        with pytest.raises(InvalidLaunchArgument):
-            validate_launch_args([arg])
+# t103 retired cbrowser.launch_args (removed test_launch_args_whitelist_contract).
 
 
 def test_event_storage_atomic_write_and_recovery(tmp_path: Path) -> None:

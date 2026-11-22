@@ -373,8 +373,7 @@ async def initialize_profile_defaults(
         await asyncio.sleep(1.0)
 
         # 2. Fill dialog inputs directly via DOM value + Polymer input events so
-        # humanize=True typing simulation on chrome://settings never eats ~16s of
-        # the startup readiness budget.
+        # UI typing waits on chrome://settings never consume startup readiness budget.
         try:
             filled = await page.evaluate(
                 _FILL_ADD_DIALOG_JS,
