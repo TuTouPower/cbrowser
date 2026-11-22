@@ -93,6 +93,7 @@ from cbrowser.supervisor.volume_spec import (
     SINGLETON_LOCK_NAMES,
     browser_volumes,
     cache_init_volumes,
+    extension_mount,
     font_set_mount,
     stream_volumes,
 )
@@ -2225,6 +2226,34 @@ with path.open('w') as output:
                         f"Failed to disconnect {c.id} from {net_name}: {docker_error_detail(e)}"
                     ) from e
 
+    def _configured_asset_mounts(self, cfg: Any) -> list[dict[str, str]]:
+        if not isinstance(cfg, dict):
+            return []
+        asset_mounts: list[dict[str, str]] = []
+        font_set_id = cfg.get("font_set_id")
+        if isinstance(font_set_id, str) and font_set_id:
+            # t075: the mount is built at the volume_spec boundary
+            # from the planner's configured fonts root. A bound
+            # set that is missing or malformed fails container
+            # creation here — it is never silently skipped.
+            asset_mounts.append(
+                font_set_mount(
+                    planner=self.mount_planner,
+                    platform=cfg.get("fingerprint_platform", "windows"),
+                    font_set_id=font_set_id,
+                )
+            )
+        if bool(cfg.get("allow_extensions")) and isinstance(cfg.get("extension_ids"), list):
+            for asset_id in cfg["extension_ids"]:
+                if isinstance(asset_id, str) and asset_id:
+                    asset_mounts.append(
+                        extension_mount(
+                            planner=self.mount_planner,
+                            asset_id=asset_id,
+                        )
+                    )
+        return asset_mounts
+
     async def start_browser_container(
         self,
         profile_id: str,
@@ -2282,23 +2311,7 @@ with path.open('w') as output:
         mounts.append(
             self.mount_planner.mount(socket_dir, str(socket_dir), "rw")
         )
-        cfg = snapshot.get("config")
-        if isinstance(cfg, dict):
-            font_set_id = cfg.get("font_set_id")
-            if isinstance(font_set_id, str) and font_set_id:
-                # t075: the mount is built at the volume_spec boundary
-                # from the planner's configured fonts root.  A bound
-                # set that is missing or malformed fails container
-                # creation here — it is never silently skipped (the
-                # old deep env read could drop the mount entirely and
-                # start the Browser with zero fonts, p125).
-                mounts.append(
-                    font_set_mount(
-                        planner=self.mount_planner,
-                        platform=cfg.get("fingerprint_platform", "windows"),
-                        font_set_id=font_set_id,
-                    )
-                )
+        mounts.extend(self._configured_asset_mounts(snapshot.get("config")))
         # The Browser connects directly to the upstream proxy via SDK ``proxy=``:
         # the credentials file (Profile secret dir) is mounted read-only into
         # the Browser. The egress plan derives both host-gateway injection and
@@ -2619,6 +2632,29 @@ with path.open('w') as output:
                 f"{docker_error_detail(exc)}"
             ) from None
 
+    @staticmethod
+    def _stop_running_browser_before_removal(
+        container: Any, role: str | None, name: str
+    ) -> bool:
+        if (
+            role != "browser"
+            or getattr(container, "status", None) != "running"
+            or not callable(getattr(container, "stop", None))
+        ):
+            return True
+        try:
+            container.stop(timeout=8)
+            return True
+        except NotFound:
+            return False
+        except DockerException as stop_exc:
+            logger.warning(
+                "Graceful stop before removal failed for %s: error_type=%s",
+                name,
+                type(stop_exc).__name__,
+            )
+            return True
+
     def cleanup_container_by_name(self, name: str) -> None:
         try:
             c = self.client.containers.get(name)
@@ -2637,6 +2673,8 @@ with path.open('w') as output:
                 and name
                 == f"{self.resource_prefix}-{profile_number:04d}-{role}"
             ):
+                if not self._stop_running_browser_before_removal(c, role, name):
+                    return
                 c.remove(force=True)
                 logger.info(f"Removed container {name}")
             else:

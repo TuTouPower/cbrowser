@@ -41,6 +41,7 @@ BUSINESS_TABLES = frozenset(
         "runtime_events",
         "settings",
         "artifacts",
+        "extension_assets",
         "sessions",
         "admins",
         "automation_tokens",

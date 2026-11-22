@@ -122,6 +122,7 @@ COPY src/backend/cbrowser/domain /app/src/backend/cbrowser/domain
 COPY src/backend/cbrowser/shared /app/src/backend/cbrowser/shared
 COPY src/backend/cbrowser/font_sets /app/src/backend/cbrowser/font_sets
 COPY src/backend/cbrowser/fingerprint_verification /app/src/backend/cbrowser/fingerprint_verification
+COPY src/backend/cbrowser/extensions /app/src/backend/cbrowser/extensions
 COPY src/backend/cbrowser/runtime_agent /app/src/backend/cbrowser/runtime_agent
 COPY config/docker/browser_runtime/entrypoint.sh /app/entrypoint.sh
 COPY --from=xshm_probe_builder /test_mitshm /usr/local/bin/test_mitshm

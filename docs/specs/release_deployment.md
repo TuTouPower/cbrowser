@@ -1,7 +1,7 @@
 ---
 slug: release_deployment
 status: active
-tasks: [baseline, t075, t080, t097, t100, t102, t103]
+tasks: [baseline, t075, t080, t097, t100, t102, t103, t104]
 ---
 # 需求规范：Release 发布与回退
 
@@ -70,7 +70,7 @@ tasks: [baseline, t075, t080, t097, t100, t102, t103]
 ## 环境恢复点（t066）
 
 - 环境级备份恢复唯一入口为恢复点：`scripts/deploy.sh env-backup [point-dir]` / `env-restore <point-dir>`，底层 `scripts/restore_point.py`（create/verify/restore）在一次性 API 镜像容器内挂载 named volume `db` 与数据根 `/data` 运行。
-- 恢复点 = 同一静默时刻的成套快照：DB（SQLite 在线 backup、integrity_check、schema stamp）+ 全部 Profile 用户数据目录（逐文件 SHA-256 manifest）+ 凭据前提清单（只记文件名/大小，凭据不进恢复点）。任一 Profile 有实际写者（运行/迁移态/实例绑定残留）时备份拒绝。
+- 恢复点 = 同一静默时刻的成套快照：DB（SQLite 在线 backup、integrity_check、schema stamp）+ 全部 Profile 用户数据目录（逐文件 SHA-256 manifest）+ 受管扩展资产目录 `/data/extensions`（`manifest["extensions"]` 逐文件 SHA-256 记录，t104）+ 凭据前提清单（只记文件名/大小，凭据不进恢复点）。任一 Profile 有实际写者（运行/迁移态/实例绑定残留）时备份拒绝。
 - 恢复协议：先 staging 到目标旁并全量校验（哈希、完整性、schema stamp 与活库一致、空间足够），再按 journal 逐项 rename 成套切换；中断由下一次调用回滚到旧集并以退出码 3 报告，重跑完成恢复；恢复前整套数据保留在 `.pre-restore-<switch-id>`，不自动删除。跨代 stamp 拒绝恢复。
 - 旧 `tar data/instance` 备份漏 named volume DB，废止为环境备份手段；`deploy.sh restore` 仅作 DB 单件恢复。
 

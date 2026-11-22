@@ -22,6 +22,7 @@ RUNTIME_SECRETS_PREFIX = ".secrets"
 
 DATA_VOLUME_LAYOUT = (
     "profiles",
+    "extensions",
     "runtime",
     "runtime-events",
     "artifacts",

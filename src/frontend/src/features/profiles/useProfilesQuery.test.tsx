@@ -7,12 +7,16 @@ import {
   useProfilesCollectionQuery,
   useProfileRuntimeQuery,
   useCreateProfileMutation,
+  useUpdateProfileMutation,
+  useDeleteProfileMutation,
+  useDuplicateProfileMutation,
   useSetDesiredStateMutation,
   useProfileEventsSync,
   profileKeys,
   groupKeys,
   probeJobKeys,
   proxyKeys,
+  extensionKeys,
 } from "./useProfilesQuery";
 import { ApiClient } from "../../shared/api/client";
 import {
@@ -64,7 +68,8 @@ describe("useProfilesQuery & SSE Sync", () => {
         include_cjk_fonts: false,
         geoip: false,
         clipboard_sync: false,
-        extension_paths: [],
+        allow_extensions: false,
+        extension_ids: [],
         set_google_default: true,
         capture_preview: true,
         restore_session: true,
@@ -111,7 +116,8 @@ describe("useProfilesQuery & SSE Sync", () => {
       include_cjk_fonts: false,
       geoip: false,
       clipboard_sync: false,
-      extension_paths: [],
+      allow_extensions: false,
+      extension_ids: [],
       set_google_default: true,
       capture_preview: true,
       restore_session: true,
@@ -1572,6 +1578,66 @@ describe("useProfilesQuery & SSE Sync", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: profileKeys.runtimeAlerts(),
     });
+  });
+
+  it("invalidates extensionKeys on create, update, delete, and duplicate profile mutations (t104)", async () => {
+    const sampleProfile = {
+      id: "p1",
+      name: "Profile 1",
+      display_number: 1,
+      fingerprint_seed: 100,
+      screen_width: 1920,
+      screen_height: 1080,
+      color_scheme: "light" as const,
+      include_cjk_fonts: false,
+      geoip: false,
+      clipboard_sync: false,
+      allow_extensions: true,
+      extension_ids: [],
+      set_google_default: true,
+      capture_preview: true,
+      restore_session: true,
+      mute_audio: false,
+      user_data_dir: "/data/p1",
+      sort_order: 0,
+      current_config_version: 1,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+    mockApiClient.profiles.create = vi.fn(async () => sampleProfile);
+    mockApiClient.profiles.update = vi.fn(async () => sampleProfile);
+    mockApiClient.profiles.delete = vi.fn(async () => undefined);
+    mockApiClient.profiles.duplicate = vi.fn(async () => ({ ...sampleProfile, id: "p2" }));
+
+    const wrapper = createWrapper();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const createHook = renderHook(() => useCreateProfileMutation(mockApiClient), { wrapper });
+    const updateHook = renderHook(() => useUpdateProfileMutation(mockApiClient), { wrapper });
+    const deleteHook = renderHook(() => useDeleteProfileMutation(mockApiClient), { wrapper });
+    const dupHook = renderHook(() => useDuplicateProfileMutation(mockApiClient), { wrapper });
+
+    await act(async () => {
+      await createHook.result.current.mutateAsync({ ...DEFAULT_PROFILE_CREATE_VALUES, name: "New" });
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: extensionKeys.all });
+
+    invalidateSpy.mockClear();
+    await act(async () => {
+      await updateHook.result.current.mutateAsync({ id: "p1", data: { allow_extensions: false } });
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: extensionKeys.all });
+
+    invalidateSpy.mockClear();
+    await act(async () => {
+      await deleteHook.result.current.mutateAsync("p1");
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: extensionKeys.all });
+
+    invalidateSpy.mockClear();
+    await act(async () => {
+      await dupHook.result.current.mutateAsync({ id: "p1", includeBrowserState: false });
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: extensionKeys.all });
   });
 });
 

@@ -43,10 +43,10 @@
     - 连接身份由官方 `client_tab_id` 维护，页面刷新保留该身份并生成新 `resume_key`；仅连接内断线重连复用原 `resume_key`。
     - 关闭任一外部标签页不影响同一 Profile 的其他连接，也不关闭底层浏览器进程。
 
-## 字段校验、null 与时间语义（t021，t103 修订）
+## 字段校验、null 与时间语义（t021，t103/t104 修订）
 
-- **更新与持久化边界严格校验**：六个无效历史选项与通用 `launch_args` 已由 t103 退役删除（提交即 422 零写入）。`ProfileUpdateRequest` 与 `ProfileConfig` 对 `extension_paths` 保持严格校验（条数、单条长度、安全规则拒绝，详见后续 `t104`）。
-- **PATCH 三态语义**：`extension_paths` 缺失（absent）表示不变；显式 `null` 表示清空为 `[]`；给出列表表示整体替换。`ProfileConfig` 对显式 null 的 `extension_paths` 归一为 `[]`，仓储合并路径不得把 null 直接送入领域模型（曾导致 500）。
+- **更新与持久化边界严格校验**：六个无效历史选项与通用 `launch_args` 已由 t103 退役删除，`extension_paths` 已由 t104 移除（创建/更新提交任意已退役/移除键一律 422 零写入）。扩展领域边界改由 `allow_extensions: bool = False`（`ProfileUpdateRequest` 明确拒绝显式 `null`）与有序 `extension_ids: list[str] = []`（`ProfileConfig` 归一化去重拒绝、未知/未认证资产拒绝，请求缺省时保持不变、传入列表整体替换）表达，修改任一扩展字段均生成新 `ProfileConfigVersion`。
+- **受管扩展资产目录与删除保护（t104）**：新增受管资产边界 DTO（`ExtensionAssetResponse`、`ExtensionAssetListResponse`、`ExtensionUsedByResponse`），只凭 `extension_assets` 与解码后受管目录中的 `manifest.json["key"]` 保持扩展 ID 连续性；`DELETE /api/v1/extensions/{asset_id}` 同时核对当前 `profiles` 与活跃/绑定 `profile_config_versions` 引用，任一命中即 `409 extension_in_use`。
 - **时间语义**：全仓唯一的当前时间实现是 `cbrowser.domain.models.utc_now_iso`；适配层模型不得再定义同名本地实现，SQLAlchemy 列默认值直接引用领域实现。
 - **期望/观测状态词汇**：内部 runtime 响应与事件 DTO 的 `desired_state` / `observed_state` 使用领域枚举 `DesiredState` / `ObservedState`，OpenAPI 中呈现为封闭 enum，未知状态值在 DTO 边界即被拒绝，不再以自由文本透传。
 

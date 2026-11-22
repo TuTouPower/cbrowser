@@ -1,7 +1,7 @@
 ---
 slug: storage_and_artifacts
 status: active
-tasks: [baseline, t078, t080, t089]
+tasks: [baseline, t078, t080, t089, t104]
 ---
 # 需求规范：数据持久化、迁移与文件交换 (storage_and_artifacts)
 
@@ -27,6 +27,7 @@ tasks: [baseline, t078, t080, t089]
     - `profile_deletions`：删除意图与阶段结果（t078；每目标一行，含名称快照、失败阶段与分步清理明细，终结后保留作审计）
     - `audit_events`：生命周期操作审计（无外键，不随 Profile 删除）
     - `settings`：系统级键值配置
+    - `extension_assets`：受管扩展资产目录（t104；`id` / `chromium_id` / `name` / `version` / `manifest_version` / `package_format` / `identity_source` / `manifest_key_sha256` / `archive_sha256` / `file_count` / `total_bytes` / `integrity` / `state`）
 - 排他控制租约、控制会话与 StreamTicket 已废弃（ADR 007）；数据库不包含 `control_sessions`、`control_leases` 或 `stream_tickets` 表。
 
 ### 2.2 旧数据库迁移兼容
@@ -88,3 +89,7 @@ tasks: [baseline, t078, t080, t089]
 ## 包装配置版本快照的身份迁移与补偿（t089）
 
 - `profile_config_versions.snapshot` 统一兼容平铺历史快照与仓库写入的 `{"config": ..., "proxy_credential_revision": ...}` 包装结构：`0013_profile_identity.py`（`d75a0013f001`）与补偿迁移 `0014_repair_wrapped_snapshots.py`（`e89a0014c001`，接在 `d7e3a91f4c62` 之后保持单一 head）共用 `cbrowser/adapters/database/snapshot_identity.py`，在写入前整库校验内层/平铺 `gpu_family`、已认证 `font_set_id` 及损坏对象，仅在内层或平铺目标映射对象执行清理与默认绑定，保留 `proxy_credential_revision` 并清除旧 `0013` 在包装外层错写的配置键，支持幂等重跑且不修改浏览器用户目录。
+
+## `extension_paths` 前向迁移 `0017` 与内容寻址扩展目录（t104）
+
+- 迁移 `0017_managed_extensions.py`（revision `e10400170001`，接 `a10300160001` 保持单一 head）删除 `profiles.extension_paths`、新增 `allow_extensions`（默认 0）与 `extension_ids`（默认 `[]`）及 `extension_assets` 表，并调用 `cbrowser/adapters/database/extension_paths_migration.py` 对 `profiles` 行与全部 `profile_config_versions.snapshot`（平铺与包装格式）只读盘点后一次性改写：空配置迁为 `allow_extensions=False, extension_ids=[]`；非空旧路径必须解析出完整解压目录并校验 `manifest.json["key"]` 连续性且一对一匹配已接入 `<data_root>/extensions/{asset_id}` 受管资产，否则在任何写盘前整体失败阻断且数据库零写入；允许幂等重跑并原封保留 `chrome.runtime.id` 与本地扩展存储。

@@ -34,6 +34,12 @@ function renderPages(fontSets: FontSetFixture[] = []) {
     groups: { list: vi.fn(async () => []), create: vi.fn(async () => ({})) },
     proxies: { list: vi.fn(async () => []) },
     fontSets: { list: vi.fn(async () => ({ items: fontSets, default_font_set_id: { windows: null, macos: null } })) },
+    extensions: {
+      list: vi.fn(async () => ({ items: [] })),
+      upload: vi.fn(),
+      getUsedBy: vi.fn(async () => ({ asset_id: "", entries: [] })),
+      remove: vi.fn(async () => undefined),
+    },
     request: vi.fn(async () => fontSets),
   } as unknown as ApiClient;
   return render(
@@ -126,6 +132,138 @@ describe("settings platform font sets (t036+)", () => {
     expect(screen.getByTestId("font-set-integrity-bad")).toBeInTheDocument();
     expect(screen.getByTestId("font-set-problems")).toHaveTextContent(
       "missing: PingFang.ttc",
+    );
+  });
+});
+
+describe("settings managed extensions library (t104)", () => {
+  beforeEach(() => {
+    localStorage.setItem("cbrowser.locale", "en");
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it("renders uploaded extensions, expands used-by, deletes unused, and surfaces upload errors", async () => {
+    const usedId = "1".repeat(64);
+    const freeId = "2".repeat(64);
+    const removeFn = vi.fn(async () => undefined);
+    const uploadFn = vi.fn(async () => {
+      throw new Error("indeterminate_extension_identity");
+    });
+    const usedByFn = vi.fn(async () => ({
+      asset_id: usedId,
+      entries: [
+        {
+          profile_id: "p1",
+          profile_name: "Vault Profile",
+          display_number: 4,
+          kind: "bound",
+          observed_state: "running",
+        },
+      ],
+    }));
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const client = {
+      health: { check: vi.fn(async () => undefined) },
+      fontSets: {
+        list: vi.fn(async () => ({
+          items: [],
+          default_font_set_id: { windows: null, macos: null },
+        })),
+      },
+      extensions: {
+        list: vi.fn(async () => ({
+          items: [
+            {
+              id: usedId,
+              chromium_id: "nngceckbapebfimnlniiiahkandclblb",
+              name: "Bitwarden",
+              version: "2026.11.0",
+              manifest_version: 3,
+              description: "Password manager",
+              package_format: "crx3",
+              identity_source: "crx3_header",
+              manifest_key_sha256: "a".repeat(64),
+              archive_sha256: "b".repeat(64),
+              has_icon: false,
+              icon_url: null,
+              file_count: 10,
+              total_bytes: 4096,
+              integrity: { ok: true, problems: [] },
+              state: "verified",
+              used_by_count: 1,
+              created_at: "2026-01-01T00:00:00Z",
+              updated_at: "2026-01-01T00:00:00Z",
+            },
+            {
+              id: freeId,
+              chromium_id: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+              name: "Unused Helper",
+              version: "0.1.0",
+              manifest_version: 3,
+              description: null,
+              package_format: "zip",
+              identity_source: "manifest_key",
+              manifest_key_sha256: "c".repeat(64),
+              archive_sha256: "d".repeat(64),
+              has_icon: false,
+              icon_url: null,
+              file_count: 2,
+              total_bytes: 256,
+              integrity: { ok: true, problems: [] },
+              state: "verified",
+              used_by_count: 0,
+              created_at: "2026-01-01T00:00:00Z",
+              updated_at: "2026-01-01T00:00:00Z",
+            },
+          ],
+        })),
+        upload: uploadFn,
+        getUsedBy: usedByFn,
+        remove: removeFn,
+      },
+    } as unknown as ApiClient;
+
+    render(
+      <I18nProvider>
+        <ThemeProvider>
+          <QueryClientProvider client={queryClient}>
+            <ApiClientContext.Provider value={client}>
+              <MemoryRouter>
+                <SettingsPage />
+              </MemoryRouter>
+            </ApiClientContext.Provider>
+          </QueryClientProvider>
+        </ThemeProvider>
+      </I18nProvider>,
+    );
+
+    const usedCard = await screen.findByTestId(`extension-card-${usedId}`);
+    expect(usedCard).toHaveTextContent("Bitwarden");
+    expect(usedCard).toHaveTextContent("nngceckbapebfimnlniiiahkandclblb");
+    expect(screen.getByTestId(`extension-delete-btn-${usedId}`)).toBeDisabled();
+    expect(screen.getByTestId(`extension-delete-btn-${freeId}`)).not.toBeDisabled();
+
+    fireEvent.click(screen.getByTestId(`extension-used-by-btn-${usedId}`));
+    const usedByList = await screen.findByTestId(`extension-used-by-${usedId}`);
+    expect(usedByList).toHaveTextContent("Vault Profile");
+    expect(usedByList.textContent).not.toContain("#4");
+
+    fireEvent.click(screen.getByTestId(`extension-delete-btn-${freeId}`));
+    await waitFor(() => expect(removeFn).toHaveBeenCalledWith(freeId));
+
+    const badZip = new File([new Uint8Array([9, 9])], "bad.zip");
+    fireEvent.change(screen.getByTestId("extensions-file-input"), {
+      target: { files: [badZip] },
+    });
+    expect(await screen.findByTestId("extensions-action-error")).toHaveTextContent(
+      "indeterminate_extension_identity",
     );
   });
 });

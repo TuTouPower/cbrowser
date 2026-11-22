@@ -60,6 +60,9 @@ describe("SettingsPage network section is read-only (t054)", () => {
       fontSets: {
         list: fontSetsList,
       },
+      extensions: {
+        list: vi.fn(async () => ({ items: [] })),
+      },
     } as unknown as ApiClient;
     renderWithProviders(client);
 

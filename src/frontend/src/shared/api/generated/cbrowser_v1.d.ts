@@ -664,6 +664,76 @@ export interface paths {
         patch: operations["update_settings_api_v1_settings_patch"];
         trace?: never;
     };
+    "/api/v1/extensions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Extensions */
+        get: operations["list_extensions_api_v1_extensions_get"];
+        put?: never;
+        /** Upload Extension */
+        post: operations["upload_extension_api_v1_extensions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/extensions/{asset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Extension */
+        get: operations["get_extension_api_v1_extensions__asset_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Extension */
+        delete: operations["delete_extension_api_v1_extensions__asset_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/extensions/{asset_id}/used-by": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Extension Used By */
+        get: operations["get_extension_used_by_api_v1_extensions__asset_id__used_by_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/extensions/{asset_id}/icon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Extension Icon */
+        get: operations["get_extension_icon_api_v1_extensions__asset_id__icon_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/font-sets": {
         parameters: {
             query?: never;
@@ -1281,6 +1351,84 @@ export interface components {
             /** Details */
             details?: unknown | null;
         };
+        /** ExtensionAssetListResponse */
+        ExtensionAssetListResponse: {
+            /** Items */
+            items?: components["schemas"]["ExtensionAssetResponse"][];
+        };
+        /** ExtensionAssetResponse */
+        ExtensionAssetResponse: {
+            /** Id */
+            id: string;
+            /** Chromium Id */
+            chromium_id: string;
+            /** Name */
+            name: string;
+            /** Version */
+            version: string;
+            /** Manifest Version */
+            manifest_version: number;
+            /** Description */
+            description?: string | null;
+            /** Package Format */
+            package_format: string;
+            /** Identity Source */
+            identity_source: string;
+            /** Manifest Key Sha256 */
+            manifest_key_sha256: string;
+            /** Archive Sha256 */
+            archive_sha256: string;
+            /** Has Icon */
+            has_icon: boolean;
+            /** Icon Url */
+            icon_url?: string | null;
+            /** File Count */
+            file_count: number;
+            /** Total Bytes */
+            total_bytes: number;
+            integrity: components["schemas"]["ExtensionIntegrity"];
+            /** State */
+            state: string;
+            /**
+             * Used By Count
+             * @default 0
+             */
+            used_by_count: number;
+            /** Created At */
+            created_at: string;
+            /** Updated At */
+            updated_at: string;
+        };
+        /** ExtensionIntegrity */
+        ExtensionIntegrity: {
+            /** Ok */
+            ok: boolean;
+            /** Problems */
+            problems?: string[];
+        };
+        /** ExtensionUsedByEntry */
+        ExtensionUsedByEntry: {
+            /** Profile Id */
+            profile_id: string;
+            /** Profile Name */
+            profile_name: string;
+            /** Display Number */
+            display_number: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "current" | "bound" | "both";
+            /** Observed State */
+            observed_state?: string | null;
+        };
+        /** ExtensionUsedByResponse */
+        ExtensionUsedByResponse: {
+            /** Asset Id */
+            asset_id: string;
+            /** Entries */
+            entries?: components["schemas"]["ExtensionUsedByEntry"][];
+        };
         /** FontDetection */
         FontDetection: {
             /** Total */
@@ -1513,8 +1661,13 @@ export interface components {
              * @default true
              */
             include_cjk_fonts: boolean;
-            /** Extension Paths */
-            extension_paths?: string[];
+            /**
+             * Allow Extensions
+             * @default false
+             */
+            allow_extensions: boolean;
+            /** Extension Ids */
+            extension_ids?: string[];
             /**
              * Set Google Default
              * @default true
@@ -1653,8 +1806,13 @@ export interface components {
             fingerprint_platform?: "windows" | "macos";
             /** Include Cjk Fonts */
             include_cjk_fonts?: boolean | null;
-            /** Extension Paths */
-            extension_paths?: string[];
+            /**
+             * Allow Extensions
+             * @default false
+             */
+            allow_extensions: boolean;
+            /** Extension Ids */
+            extension_ids?: string[];
             /**
              * Set Google Default
              * @default true
@@ -1808,8 +1966,13 @@ export interface components {
              * @default true
              */
             include_cjk_fonts: boolean;
-            /** Extension Paths */
-            extension_paths?: string[];
+            /**
+             * Allow Extensions
+             * @default false
+             */
+            allow_extensions: boolean;
+            /** Extension Ids */
+            extension_ids?: string[];
             /**
              * Set Google Default
              * @default true
@@ -2046,8 +2209,10 @@ export interface components {
             fingerprint_platform?: ("windows" | "macos") | null;
             /** Include Cjk Fonts */
             include_cjk_fonts?: boolean | null;
-            /** Extension Paths */
-            extension_paths?: string[] | null;
+            /** Allow Extensions */
+            allow_extensions?: boolean | null;
+            /** Extension Ids */
+            extension_ids?: string[] | null;
             /** Set Google Default */
             set_google_default?: boolean | null;
             /** Capture Preview */
@@ -5466,6 +5631,404 @@ export interface operations {
             };
             /** @description Authorization or CSRF check failed */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_extensions_api_v1_extensions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtensionAssetListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    upload_extension_api_v1_extensions_post: {
+        parameters: {
+            query?: {
+                filename?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Identical extension asset already present */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtensionAssetResponse"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtensionAssetResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Extension archive exceeds maximum upload size */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Malformed archive, invalid manifest.json, or indeterminate Chromium ID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Managed extension storage root not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_extension_api_v1_extensions__asset_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtensionAssetResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Extension asset not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_extension_api_v1_extensions__asset_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Extension asset not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Extension asset is referenced by one or more profiles */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_extension_used_by_api_v1_extensions__asset_id__used_by_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtensionUsedByResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Extension asset not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_extension_icon_api_v1_extensions__asset_id__icon_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Extension asset or icon not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

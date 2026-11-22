@@ -15,6 +15,7 @@ from typing import Iterable
 
 from docker.types import Mount
 
+from cbrowser.extensions.manifest import EXTENSIONS_DIR_NAME
 from cbrowser.shared.storage_layout import (
     RUNTIME_GATES_PREFIX,
     RUNTIME_POLICY_AGENTS_PREFIX,
@@ -58,6 +59,7 @@ class MountPlanner:
         self.data_root = Path(data_root).resolve()
         self.socket_root = Path(socket_root).resolve()
         self.fonts_root = Path(fonts_root).resolve()
+        self.extensions_root = self.data_root / EXTENSIONS_DIR_NAME
         self.runtime_root = self.data_root / "runtime"
         self.gates_root = self.data_root / "control" / "gates"
         self.policy_agent_root = (

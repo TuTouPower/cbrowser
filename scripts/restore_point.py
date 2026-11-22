@@ -46,6 +46,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import sys
@@ -57,6 +58,7 @@ from urllib.parse import quote
 FORMAT_VERSION = 1
 SKIP_NAMES = frozenset({"SingletonLock", "SingletonCookie", "SingletonSocket"})
 TRANSITIONAL_STATES = ("starting", "running", "stopping")
+MANAGED_EXTENSION_ID_RE = re.compile(r"^[a-f0-9]{64}$")
 
 
 class RestorePointError(Exception):
@@ -246,6 +248,67 @@ def _tree_bytes(entries: dict[str, dict]) -> int:
 # create
 
 
+def _backup_extensions_dir(
+    data_root: Path, staging: Path
+) -> tuple[list[dict], int]:
+    """Copy verified 64-hex managed extension assets, skipping hidden/staging dirs."""
+    manifest_extensions: list[dict] = []
+    total_bytes = 0
+    extensions_dir = data_root / "extensions"
+    if not extensions_dir.is_dir():
+        return manifest_extensions, total_bytes
+    for child in sorted(extensions_dir.iterdir()):
+        if (
+            child.name.startswith(".")
+            or child.is_symlink()
+            or not child.is_dir()
+            or not MANAGED_EXTENSION_ID_RE.fullmatch(child.name)
+        ):
+            continue
+        relative = f"extensions/{child.name}"
+        entries = _copy_tree_manifest(child, staging / relative)
+        ext_bytes = _tree_bytes(entries)
+        total_bytes += ext_bytes
+        manifest_extensions.append(
+            {
+                "id": child.name,
+                "dir": relative,
+                "files": entries,
+                "bytes": ext_bytes,
+            }
+        )
+    return manifest_extensions, total_bytes
+
+
+def _stage_extensions_restore(
+    manifest: dict, point: Path, data_root: Path, switch_id: str
+) -> dict | None:
+    if "extensions" not in manifest:
+        return None
+    ext_live_dir = data_root / "extensions"
+    ext_staged_dir = data_root / f".restore-staging-extensions-{switch_id}"
+    ext_previous_dir = data_root / f"extensions.pre-restore-{switch_id}"
+    if ext_staged_dir.exists():
+        shutil.rmtree(ext_staged_dir)
+    ext_staged_dir.mkdir(parents=True, exist_ok=True)
+    for ext in manifest["extensions"]:
+        entries = _copy_tree_manifest(point / ext["dir"], ext_staged_dir / ext["id"])
+        if entries != ext["files"]:
+            shutil.rmtree(ext_staged_dir, ignore_errors=True)
+            raise RestorePointError(
+                f"staged copy of extension {ext['id']} failed verification"
+            )
+    return {
+        "kind": "extensions",
+        "id": "extensions",
+        "live_path": str(ext_live_dir),
+        "staged_path": str(ext_staged_dir),
+        "previous_path": str(ext_previous_dir) if ext_live_dir.exists() else None,
+        "state": "pending",
+        "sidecars": False,
+    }
+
+
 def create_point(args: argparse.Namespace) -> int:
     db_path = Path(args.db)
     data_root = Path(args.data_root).resolve()
@@ -308,6 +371,9 @@ def create_point(args: argparse.Namespace) -> int:
                 total_bytes += record["bytes"]
             manifest_profiles.append(record)
 
+        manifest_extensions, ext_total = _backup_extensions_dir(data_root, staging)
+        total_bytes += ext_total
+
         # The point must capture one quiet moment.  A writer that
         # started while the directories were being copied — or a
         # profile row that moved — tears the set (database snapshot
@@ -355,6 +421,7 @@ def create_point(args: argparse.Namespace) -> int:
                 "schema_stamp": stamp,
             },
             "profiles": manifest_profiles,
+            "extensions": manifest_extensions,
             "credential_prerequisites": prerequisites,
             "total_bytes": total_bytes,
         }
@@ -411,6 +478,13 @@ def validate_point(point: Path) -> dict:
                 f"profile {profile['id']} tree mismatch: "
                 + "; ".join(problems[:5])
             )
+    for ext in manifest.get("extensions", []):
+        problems = _verify_tree(point / ext["dir"], ext["files"])
+        if problems:
+            raise RestorePointError(
+                f"extension {ext['id']} tree mismatch: "
+                + "; ".join(problems[:5])
+            )
     return manifest
 
 
@@ -423,6 +497,7 @@ def verify_point(args: argparse.Namespace) -> int:
                 "created_at": manifest["created_at"],
                 "schema_stamp": manifest["db"]["schema_stamp"],
                 "profiles": len(manifest["profiles"]),
+                "extensions": len(manifest.get("extensions", [])),
                 "total_bytes": manifest["total_bytes"],
                 "credential_prerequisites": [
                     p["name"] for p in manifest["credential_prerequisites"]
@@ -582,6 +657,9 @@ def restore_point(args: argparse.Namespace) -> int:
         for stale in profile_parent.glob(".restore-staging-*"):
             if stale.is_dir():
                 shutil.rmtree(stale, ignore_errors=True)
+    for stale in data_root.glob(".restore-staging-extensions-*"):
+        if stale.is_dir():
+            shutil.rmtree(stale, ignore_errors=True)
 
     switch_id = uuid.uuid4().hex[:12]
     # Stage validated copies next to their targets (same filesystems).
@@ -610,8 +688,9 @@ def restore_point(args: argparse.Namespace) -> int:
         }
     )
     profiles_bytes = sum(p["bytes"] for p in manifest["profiles"])
+    extensions_bytes = sum(e["bytes"] for e in manifest.get("extensions", []))
     disk = shutil.disk_usage(data_root)
-    if disk.free < profiles_bytes:
+    if disk.free < profiles_bytes + extensions_bytes:
         raise RestorePointError("insufficient free space on the data root")
     for profile in manifest["profiles"]:
         live_dir = _profile_live_dir(data_root, manifest, profile)
@@ -637,6 +716,9 @@ def restore_point(args: argparse.Namespace) -> int:
                 "sidecars": False,
             }
         )
+    ext_item = _stage_extensions_restore(manifest, point, data_root, switch_id)
+    if ext_item is not None:
+        items.append(ext_item)
 
     journal = {
         "version": FORMAT_VERSION,
@@ -663,7 +745,7 @@ def restore_point(args: argparse.Namespace) -> int:
                         if sidecar.exists():
                             sidecar.replace(Path(str(previous) + suffix))
                 moved = True
-            if item["kind"] == "db" or (point_has_dir(manifest, item["id"])):
+            if item["kind"] in ("db", "extensions") or (point_has_dir(manifest, item["id"])):
                 staged.replace(live)
                 moved = True
             if moved:

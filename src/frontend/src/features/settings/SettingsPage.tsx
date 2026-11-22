@@ -5,6 +5,7 @@ import {
   LogOut,
   Network,
   Palette,
+  Puzzle,
   ShieldCheck,
   Type,
 } from "lucide-react";
@@ -14,6 +15,7 @@ import { useAuth } from "../auth/useAuth";
 import { useApiClient } from "../../shared/api/client_context";
 import type { FontSetInfo } from "../../shared/api/types";
 import { Banner, Button, Select, StatusBadge } from "../../shared/ui";
+import { ExtensionLibrarySection } from "../extensions/ExtensionLibrarySection";
 import { useFontSetsQuery } from "../profiles/useProfilesQuery";
 
 function Section({
@@ -297,6 +299,13 @@ export function SettingsPage() {
             })}
           </div>
         )}
+      </Section>
+
+      <Section
+        icon={<Puzzle aria-hidden="true" className="size-(--component-icon-lg-size)" />}
+        title={t("extensionsLibraryTitle")}
+      >
+        <ExtensionLibrarySection />
       </Section>
     </div>
   );

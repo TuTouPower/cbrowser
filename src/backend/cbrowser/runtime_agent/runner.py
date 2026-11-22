@@ -29,10 +29,16 @@ from cbrowser.shared.egress_plan import (
     ProxyCredentialsChangedError,
     resolve_runtime_egress_plan,
 )
-from cloakbrowser import launch_persistent_context_async
+from cbrowser.extensions.manifest import (
+    EXTENSION_ASSET_ID_RE,
+    EXTENSION_MOUNT_ROOT,
+    EXTENSION_UNAVAILABLE,
+    verify_extension_directory,
+)
 from cloakbrowser.browser import seed_widevine_hint
 
 from .cdp_guard import CdpGuard
+from .stealth_launch import launch_stealth_persistent_context
 from .event_storage import EventStorage, atomic_write_json
 from .fontconfig import (
     FONT_SET_MOUNT_ROOT,
@@ -52,6 +58,13 @@ from .security import validate_runtime_id
 logger = logging.getLogger("cbrowser.runtime_agent.runner")
 
 PROXY_CREDENTIALS_PATH = Path("/run/cbrowser/proxy_credentials.json")
+
+
+class ExtensionUnavailableError(RuntimeError):
+    """Fail closed when bound managed extensions are missing or tampered (t104)."""
+
+    def __init__(self) -> None:
+        super().__init__(EXTENSION_UNAVAILABLE)
 
 
 def resolve_browser_egress_plan(
@@ -109,6 +122,7 @@ class BrowserRunner:
         engine_cache_dir: Path | str = "/data/engine-cache",
         display: str = ":99",
         engine_build: str | None = None,
+        extension_mount_root: Path | str | None = None,
     ) -> None:
         self.profile_id = validate_runtime_id(profile_id)
         self.runtime_instance_id = validate_runtime_id(runtime_instance_id)
@@ -118,6 +132,11 @@ class BrowserRunner:
         self.events_dir = Path(events_dir) if events_dir else self.run_dir
         self.engine_cache_dir = Path(engine_cache_dir)
         self.display = display
+        self.extension_mount_root = (
+            Path(extension_mount_root)
+            if extension_mount_root is not None
+            else EXTENSION_MOUNT_ROOT
+        )
         if engine_build is not None and (
             not isinstance(engine_build, str)
             or not re.fullmatch(r"\d+\.\d+\.\d+\.\d+(?:\.\d+)?(?:-pro)?", engine_build)
@@ -159,6 +178,27 @@ class BrowserRunner:
         self._search_defaults_processed_requests: OrderedDict[str, None] = (
             OrderedDict()
         )
+
+    def _resolve_extension_paths(self, cfg: ProfileConfig) -> list[str] | None:
+        if not cfg.allow_extensions or not cfg.extension_ids:
+            return None
+        resolved: list[str] = []
+        seen_chromium_ids: set[str] = set()
+        for asset_id in cfg.extension_ids:
+            if not EXTENSION_ASSET_ID_RE.fullmatch(asset_id):
+                raise ExtensionUnavailableError()
+            ext_dir = self.extension_mount_root / asset_id
+            if ext_dir.is_symlink() or not ext_dir.is_dir():
+                raise ExtensionUnavailableError()
+            verdict = verify_extension_directory(ext_dir, expected_asset_id=asset_id)
+            if not verdict["ok"] or not verdict.get("chromium_id"):
+                raise ExtensionUnavailableError()
+            cid = str(verdict["chromium_id"])
+            if cid in seen_chromium_ids:
+                raise ExtensionUnavailableError()
+            seen_chromium_ids.add(cid)
+            resolved.append(str(ext_dir))
+        return resolved
 
     def resolve_engine_binary(self) -> Path:
         """Verify and resolve the approved pinned Linux build; fail closed on drift."""
@@ -603,6 +643,22 @@ class BrowserRunner:
             )
             raise FontConfigUnavailableError()
         self.font_verification = verdict
+        try:
+            resolved_extension_paths = await asyncio.to_thread(
+                self._resolve_extension_paths, cfg
+            )
+        except ExtensionUnavailableError:
+            self.event_storage.save_state(
+                RuntimeStateRecord(
+                    profile_id=self.profile_id,
+                    runtime_instance_id=self.runtime_instance_id,
+                    config_version=self.config_version,
+                    state="error",
+                    exit_code=1,
+                    exit_reason=EXTENSION_UNAVAILABLE,
+                )
+            )
+            raise
         # SDK capability/proxy selection uses the real build version. Seed CDM
         # metadata with the real binary before the process-observation wrapper
         # changes the SDK executable path. The SDK remains the only launch path.
@@ -685,7 +741,7 @@ class BrowserRunner:
         os.environ["CLOAKBROWSER_BINARY_PATH"] = str(wrapper_path)
         os.environ["CLOAKBROWSER_CACHE_DIR"] = str(self.engine_cache_dir)
         try:
-            self.browser_context = await launch_persistent_context_async(
+            self.browser_context = await launch_stealth_persistent_context(
                 user_data_dir=str(self.user_data_dir),
                 headless=False,
                 proxy=egress_plan.proxy_url,
@@ -694,7 +750,8 @@ class BrowserRunner:
                 locale=cfg.locale,
                 geoip=cfg.geoip,
                 color_scheme=cfg.color_scheme,
-                extension_paths=cfg.extension_paths or None,
+                allow_extensions=cfg.allow_extensions,
+                extension_paths=resolved_extension_paths,
                 no_viewport=True,
                 browser_version=self.browser_version,
                 env=browser_env,
@@ -1141,6 +1198,9 @@ if __name__ == "__main__":
         raise SystemExit(1) from None
     except FontConfigUnavailableError:
         logger.error("Browser Runner refused to launch: font_set_unavailable")
+        raise SystemExit(1) from None
+    except ExtensionUnavailableError:
+        logger.error("Browser Runner refused to launch: %s", EXTENSION_UNAVAILABLE)
         raise SystemExit(1) from None
     except Exception as exc:  # noqa: BLE001 - CLI top-level exception handler redacts credentials and exits status 1
         # SDK exceptions can embed launch arguments and proxy credentials.

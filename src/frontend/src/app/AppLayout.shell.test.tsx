@@ -80,6 +80,9 @@ function renderShell() {
         default_font_set_id: { windows: null, macos: null },
       })),
     },
+    extensions: {
+      list: vi.fn(async () => ({ items: [] })),
+    },
   } as unknown as ApiClient;
   const view = render(
     <QueryClientProvider client={queryClient}>

@@ -13,6 +13,11 @@ from pathlib import Path
 
 from docker.types import Mount
 
+from cbrowser.extensions.manifest import (
+    EXTENSION_ASSET_ID_RE,
+    EXTENSION_MOUNT_ROOT,
+    verify_extension_directory,
+)
 from cbrowser.runtime_agent.fontconfig import FONT_SET_MOUNT_ROOT
 from cbrowser.supervisor.path_validator import PathSecurityError
 from cbrowser.supervisor.storage_layout import MountPlanner
@@ -53,6 +58,33 @@ def font_set_mount(
     return planner.mount(
         source,
         str(FONT_SET_MOUNT_ROOT / platform / font_set_id),
+        "ro",
+    )
+
+
+def extension_mount(
+    *,
+    planner: MountPlanner,
+    asset_id: str,
+) -> Mount:
+    """Build the Browser container's read-only subpath mount for one managed extension."""
+    if not EXTENSION_ASSET_ID_RE.fullmatch(asset_id):
+        raise PathSecurityError(f"Invalid managed extension id: {asset_id!r}")
+    source = planner.extensions_root / asset_id
+    if source.is_symlink() or not source.is_dir():
+        raise PathSecurityError(
+            f"Managed extension {asset_id} is not present under the managed "
+            "extensions root; refusing empty subpath mount"
+        )
+    verdict = verify_extension_directory(source, expected_asset_id=asset_id)
+    if not verdict["ok"]:
+        raise PathSecurityError(
+            f"Managed extension {asset_id} failed integrity check: "
+            + "; ".join(verdict["problems"])
+        )
+    return planner.mount(
+        source,
+        str(EXTENSION_MOUNT_ROOT / asset_id),
         "ro",
     )
 

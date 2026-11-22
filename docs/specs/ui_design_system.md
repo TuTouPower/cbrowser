@@ -1,7 +1,7 @@
 ---
 slug: ui_design_system
 status: active
-tasks: [baseline, t075, t077, t078, t079, t099]
+tasks: [baseline, t075, t077, t078, t079, t099, t104]
 ---
 # 需求规范：设计系统与应用外壳 (ui_design_system)
 
@@ -55,7 +55,8 @@ tasks: [baseline, t075, t077, t078, t079, t099]
 
 ### 2.7 系统设置宽弹窗与偏好持久化（t074）
 
-- 侧栏左下角「设置」由 `<Link to="/settings">` 改为 `<button>`，直接在 `AppLayout` 内打开 `SettingsDialog`（`Dialog size="lg"`，两列网格分块），不导航、不离开当前页面上下文；`/settings` 路由改为 `<Navigate to="/" replace />`。弹窗收敛主题 / 语言 / 健康状态 / 退出登录 / 只读网络访问摘要 / 平台字体包，信息分区清晰，默认不堆砌 `source_version` 哈希。
+- 侧栏左下角「设置」由 `<Link to="/settings">` 改为 `<button>`，直接在 `AppLayout` 内打开 `SettingsDialog`（`Dialog size="lg"`，两列网格分块），不导航、不离开当前页面上下文；`/settings` 路由改为 `<Navigate to="/" replace />`。弹窗收敛主题 / 语言 / 健康状态 / 退出登录 / 只读网络访问摘要 / 平台字体包 / 受管扩展库（`ExtensionLibrarySection`，t104：支持 `.zip`/`.crx` 上传、展示扩展图标/名称/版本/Chromium ID/使用数与引用弹窗，被引用资产删除受服务端 `409` 拦截并清晰提示），信息分区清晰，默认不堆砌 `source_version` 哈希。
+- t104 Profile 表单扩展区（`ProfileExtensionsSelector`）：默认关闭态隐藏选择器并保持 `--disable-extensions`；仅当勾选「允许扩展」（`allow_extensions`）后展开有序多选列表、支持上移/下移排序与内联上传（无逗号文本输入框）、空选择时显示自由模式仅可经「开发者模式 -> 加载已解压的扩展程序」安装说明，并显式提示扩展会扩充指纹暴露面及密码管理器本地 Vault 缓存/凭据仍受单 Profile 数据隔离策略约束。
 - `theme` / `locale` 持久化于控制面 `settings` 表，经 `GET /api/v1/settings` / `PATCH /api/v1/settings` 读写；`SettingsSync` 置于 `AppProviders` 内（在 `I18nProvider` / `ThemeProvider` 之外）负责登录后 hydrate 与后续写服务端，两个 provider 保持独立、不依赖 auth 与 API client；`localStorage` 仅作 `theme_boot.js` 首帧防闪烁镜像，清缓存或重新登录后偏好保持。
 - 工作台 `audioMuted` 持久化到 `sessionStorage` 的 `cbrowser.session.audio_muted.${profileId}`，刷新本标签页保持静音，双标签页打开同 Profile 互不串扰。
 

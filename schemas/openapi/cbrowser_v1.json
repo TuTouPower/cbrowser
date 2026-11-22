@@ -4768,6 +4768,514 @@
         ]
       }
     },
+    "/api/v1/extensions": {
+      "get": {
+        "tags": [
+          "extensions"
+        ],
+        "summary": "List Extensions",
+        "operationId": "list_extensions_api_v1_extensions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtensionAssetListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "extensions"
+        ],
+        "summary": "Upload Extension",
+        "operationId": "upload_extension_api_v1_extensions_post",
+        "parameters": [
+          {
+            "name": "filename",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filename"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtensionAssetResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Identical extension asset already present",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtensionAssetResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Extension archive exceeds maximum upload size",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed archive, invalid manifest.json, or indeterminate Chromium ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Managed extension storage root not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ]
+      }
+    },
+    "/api/v1/extensions/{asset_id}": {
+      "get": {
+        "tags": [
+          "extensions"
+        ],
+        "summary": "Get Extension",
+        "operationId": "get_extension_api_v1_extensions__asset_id__get",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Asset Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtensionAssetResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Extension asset not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "extensions"
+        ],
+        "summary": "Delete Extension",
+        "operationId": "delete_extension_api_v1_extensions__asset_id__delete",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Asset Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Extension asset not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Extension asset is referenced by one or more profiles",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ]
+      }
+    },
+    "/api/v1/extensions/{asset_id}/used-by": {
+      "get": {
+        "tags": [
+          "extensions"
+        ],
+        "summary": "Get Extension Used By",
+        "operationId": "get_extension_used_by_api_v1_extensions__asset_id__used_by_get",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Asset Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtensionUsedByResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Extension asset not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/extensions/{asset_id}/icon": {
+      "get": {
+        "tags": [
+          "extensions"
+        ],
+        "summary": "Get Extension Icon",
+        "operationId": "get_extension_icon_api_v1_extensions__asset_id__icon_get",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Asset Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "Extension asset or icon not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/font-sets": {
       "get": {
         "tags": [
@@ -7318,6 +7826,217 @@
         "title": "ErrorResponse",
         "description": "Unified error contract (t056 A15): every API error response carries\n``error`` / ``message`` / ``retryable``.  ``details`` holds optional\nstructured extras (field errors, counts, ...).  It never nests the\nwhole error package again: ``details`` must not repeat the top-level\n``error`` / ``message`` / ``retryable`` values."
       },
+      "ExtensionAssetListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAssetResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "title": "ExtensionAssetListResponse"
+      },
+      "ExtensionAssetResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "chromium_id": {
+            "type": "string",
+            "title": "Chromium Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "manifest_version": {
+            "type": "integer",
+            "title": "Manifest Version"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "package_format": {
+            "type": "string",
+            "title": "Package Format"
+          },
+          "identity_source": {
+            "type": "string",
+            "title": "Identity Source"
+          },
+          "manifest_key_sha256": {
+            "type": "string",
+            "title": "Manifest Key Sha256"
+          },
+          "archive_sha256": {
+            "type": "string",
+            "title": "Archive Sha256"
+          },
+          "has_icon": {
+            "type": "boolean",
+            "title": "Has Icon"
+          },
+          "icon_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon Url"
+          },
+          "file_count": {
+            "type": "integer",
+            "title": "File Count"
+          },
+          "total_bytes": {
+            "type": "integer",
+            "title": "Total Bytes"
+          },
+          "integrity": {
+            "$ref": "#/components/schemas/ExtensionIntegrity"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "used_by_count": {
+            "type": "integer",
+            "title": "Used By Count",
+            "default": 0
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "chromium_id",
+          "name",
+          "version",
+          "manifest_version",
+          "package_format",
+          "identity_source",
+          "manifest_key_sha256",
+          "archive_sha256",
+          "has_icon",
+          "file_count",
+          "total_bytes",
+          "integrity",
+          "state",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ExtensionAssetResponse"
+      },
+      "ExtensionIntegrity": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "problems": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Problems"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok"
+        ],
+        "title": "ExtensionIntegrity"
+      },
+      "ExtensionUsedByEntry": {
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "title": "Profile Id"
+          },
+          "profile_name": {
+            "type": "string",
+            "title": "Profile Name"
+          },
+          "display_number": {
+            "type": "integer",
+            "title": "Display Number"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "current",
+              "bound",
+              "both"
+            ],
+            "title": "Kind"
+          },
+          "observed_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed State"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile_id",
+          "profile_name",
+          "display_number",
+          "kind"
+        ],
+        "title": "ExtensionUsedByEntry"
+      },
+      "ExtensionUsedByResponse": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "title": "Asset Id"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/ExtensionUsedByEntry"
+            },
+            "type": "array",
+            "title": "Entries"
+          }
+        },
+        "type": "object",
+        "required": [
+          "asset_id"
+        ],
+        "title": "ExtensionUsedByResponse"
+      },
       "FontDetection": {
         "properties": {
           "total": {
@@ -7926,12 +8645,17 @@
             "title": "Include Cjk Fonts",
             "default": true
           },
-          "extension_paths": {
+          "allow_extensions": {
+            "type": "boolean",
+            "title": "Allow Extensions",
+            "default": false
+          },
+          "extension_ids": {
             "items": {
               "type": "string"
             },
             "type": "array",
-            "title": "Extension Paths"
+            "title": "Extension Ids"
           },
           "set_google_default": {
             "type": "boolean",
@@ -8221,12 +8945,17 @@
             ],
             "title": "Include Cjk Fonts"
           },
-          "extension_paths": {
+          "allow_extensions": {
+            "type": "boolean",
+            "title": "Allow Extensions",
+            "default": false
+          },
+          "extension_ids": {
             "items": {
               "type": "string"
             },
             "type": "array",
-            "title": "Extension Paths"
+            "title": "Extension Ids"
           },
           "set_google_default": {
             "type": "boolean",
@@ -8580,12 +9309,17 @@
             "title": "Include Cjk Fonts",
             "default": true
           },
-          "extension_paths": {
+          "allow_extensions": {
+            "type": "boolean",
+            "title": "Allow Extensions",
+            "default": false
+          },
+          "extension_ids": {
             "items": {
               "type": "string"
             },
             "type": "array",
-            "title": "Extension Paths"
+            "title": "Extension Ids"
           },
           "set_google_default": {
             "type": "boolean",
@@ -9326,7 +10060,18 @@
             ],
             "title": "Include Cjk Fonts"
           },
-          "extension_paths": {
+          "allow_extensions": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Extensions"
+          },
+          "extension_ids": {
             "anyOf": [
               {
                 "items": {
@@ -9338,7 +10083,7 @@
                 "type": "null"
               }
             ],
-            "title": "Extension Paths"
+            "title": "Extension Ids"
           },
           "set_google_default": {
             "anyOf": [

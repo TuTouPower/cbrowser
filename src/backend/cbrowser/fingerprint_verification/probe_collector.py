@@ -81,6 +81,8 @@ def sanitize_config_summary(config: ProfileConfig) -> dict[str, Any]:
         "screen_width": config.screen_width,
         "screen_height": config.screen_height,
         "include_cjk_fonts": config.include_cjk_fonts,
+        "allow_extensions": config.allow_extensions,
+        "extension_ids": list(config.extension_ids),
         "fingerprint_seed": config.fingerprint_seed,
         "geoip": config.geoip,
         "mute_audio": config.mute_audio,

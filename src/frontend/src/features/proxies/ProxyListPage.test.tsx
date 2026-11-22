@@ -285,6 +285,7 @@ function makeStub(proxies: ProxyResponse[] = fixture()) {
     },
     groups: { list: mockFn(async () => []) },
     fontSets: { list: mockFn(async () => ({ items: [], default_font_set_id: { windows: null, macos: null } })) },
+    extensions: { list: mockFn(async () => ({ items: [] })) },
   };
   return { client: spies as unknown as ApiClient, spies, proxies };
 }

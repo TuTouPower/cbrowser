@@ -357,7 +357,30 @@ def test_fresh_db_schema_matches_golden_after_t103(
         ("table", "proxy_probe_job_members"),
         ("index", "sqlite_autoindex_proxy_probe_job_members_1"),
         ("index", "idx_proxy_probe_job_members_job"),
+        # t104: managed extension asset catalog table and chromium_id index.
+        ("table", "extension_assets"),
+        ("index", "sqlite_autoindex_extension_assets_1"),
+        ("index", "idx_extension_assets_chromium_id"),
     }
+    ext_sql = after[("table", "extension_assets")]
+    for column in (
+        "id VARCHAR(64) NOT NULL",
+        "chromium_id VARCHAR(32) NOT NULL",
+        "name VARCHAR(255) NOT NULL",
+        "version VARCHAR(64) NOT NULL",
+        "manifest_version INTEGER NOT NULL",
+        "package_format VARCHAR(16) NOT NULL",
+        "identity_source VARCHAR(32) NOT NULL",
+        "manifest_key_sha256 VARCHAR(64) NOT NULL",
+        "archive_sha256 VARCHAR(64) NOT NULL",
+        "file_count INTEGER NOT NULL",
+        "total_bytes INTEGER NOT NULL",
+        "integrity TEXT NOT NULL",
+        "state VARCHAR(16) NOT NULL",
+        "created_at VARCHAR(64) NOT NULL",
+        "updated_at VARCHAR(64) NOT NULL",
+    ):
+        assert column in ext_sql, column
     catalog_sql = after[("table", "font_set_assets")]
     for column in (
         "platform VARCHAR(32)",
@@ -399,8 +422,10 @@ def test_fresh_db_schema_matches_golden_after_t103(
     before_lines = _normalized_sql_lines(before[("table", "profiles")])
     after_lines = _normalized_sql_lines(after[("table", "profiles")])
     assert sorted(set(after_lines) - set(before_lines)) == [
+        "allow_extensions BOOLEAN DEFAULT '0' NOT NULL",
         "color_scheme VARCHAR(32) DEFAULT 'light' NOT NULL",
         "display_number INTEGER NOT NULL",
+        "extension_ids TEXT DEFAULT '[]' NOT NULL",
         "include_cjk_fonts BOOLEAN DEFAULT '1' NOT NULL",
         "mute_audio BOOLEAN DEFAULT '0' NOT NULL",
     ]
@@ -409,6 +434,7 @@ def test_fresh_db_schema_matches_golden_after_t103(
         "auto_launch BOOLEAN DEFAULT '0' NOT NULL",
         "color_scheme VARCHAR(32)",
         "display_number INTEGER",
+        "extension_paths TEXT DEFAULT '[]' NOT NULL",
         "gpu_family VARCHAR(32) DEFAULT 'auto' NOT NULL",
         "human_preset VARCHAR(32) DEFAULT 'default' NOT NULL",
         "humanize BOOLEAN DEFAULT '1' NOT NULL",

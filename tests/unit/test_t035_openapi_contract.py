@@ -18,6 +18,7 @@ PUBLIC_GROUPS = {
     "auth",
     "automation",
     "control",
+    "extensions",  # t104: /api/v1/extensions is a new resource-scoped group
     "groups",
     "profiles",
     "proxies",

@@ -67,7 +67,8 @@ function profile(): ProfileResponse {
     color_scheme: "light",
     fingerprint_platform: "windows",
     font_set_id: null,
-    extension_paths: [],
+    allow_extensions: false,
+    extension_ids: [],
     set_google_default: true,
     capture_preview: true,
     restore_session: true,
@@ -98,6 +99,9 @@ function makeStub(updateImpl?: (id: string, data: unknown) => Promise<ProfileRes
         items: [],
         default_font_set_id: { windows: null, macos: null },
       })),
+    },
+    extensions: {
+      list: vi.fn(async () => ({ items: [] })),
     },
   } as unknown as ApiClient & {
     profiles: { update: ReturnType<typeof vi.fn> };

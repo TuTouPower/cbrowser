@@ -101,7 +101,11 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 
 ### 3.3 环境恢复点（t066）
 
-环境级备份恢复的唯一契约是恢复点（`scripts/restore_point.py`，经 `deploy.sh env-backup` / `env-restore` 以一次性 API 镜像容器挂载 named volume `db` 与数据根运行）：一个恢复点 = 同一静默时刻的控制面 DB（SQLite 在线 backup + integrity_check + schema stamp）与全部 Profile 用户数据目录（逐文件 SHA-256 manifest），外加只记文件名/大小的凭据前提清单。备份在 DB 记录存在实际写者时拒绝。恢复先把整套内容 staging 到目标旁并全量校验（哈希/完整性/版本一致/空间），再按 journal 逐项 rename 成套切换；跨介质（DB 卷与数据根）的切换不是单一原子事务，靠 journal + 旧集保留（`.pre-restore-<switch-id>`）保证任一中断点收敛为完整旧集或完整新集，下一次调用先回滚未完成切换。旧的「tar data/instance + db_restore.py 直覆」不构成环境恢复（tar 漏 named volume DB、直覆不校验），仅保留 db_backup/db_restore 作发布流程的 DB 单件备份。契约细节见 `docs/specs/release_deployment.md` 的 t066 节。
+环境级备份恢复的唯一契约是恢复点（`scripts/restore_point.py`，经 `deploy.sh env-backup` / `env-restore` 以一次性 API 镜像容器挂载 named volume `db` 与数据根运行）：一个恢复点 = 同一静默时刻的控制面 DB（SQLite 在线 backup + integrity_check + schema stamp）、受管扩展目录 `/data/extensions`（t104）与全部 Profile 用户数据目录（逐文件 SHA-256 manifest），外加只记文件名/大小的凭据前提清单。备份在 DB 记录存在实际写者时拒绝。恢复先把整套内容 staging 到目标旁并全量校验（哈希/完整性/版本一致/空间），再按 journal 逐项 rename 成套切换；跨介质（DB 卷与数据根）的切换不是单一原子事务，靠 journal + 旧集保留（`.pre-restore-<switch-id>`）保证任一中断点收敛为完整旧集或完整新集，下一次调用先回滚未完成切换。旧的「tar data/instance + db_restore.py 直覆」不构成环境恢复（tar 漏 named volume DB、直覆不校验），仅保留 db_backup/db_restore 作发布流程的 DB 单件备份。契约细节见 `docs/specs/release_deployment.md` 的 t066 节。
+
+### 3.6 受管扩展资产目录、四态启动与优雅停机（t104）
+
+API 通过 `ExtensionCatalogService`（`services/extension_catalog.py`）与中立包解析模块 `cbrowser/extensions/manifest.py` 管理 `.zip`/`.crx` 扩展资产（持久化至 `extension_assets` 表与 `<data_root>/extensions/{asset_id}/`，并在 API lifespan 启动期幂等接管）；Supervisor（`core.py` + `docker_adapter.py`）按 `allow_extensions` + `extension_ids` 仅给 Browser 容器按资产精确只读挂载 `/run/cbrowser/extensions/{asset_id}` 并于停止运行态 Browser 容器前先发 `stop(timeout=8)` 优雅停机以便 Chromium 落盘 `Preferences`/存储；Browser 端 `runtime_agent/stealth_launch.py` 在保持默认关闭态（`--disable-extensions`）不变的前提下，按 `allow_extensions=True` 显式覆写 Playwright 默认忽略开关并由 `BrowserRunner` 校验扩展目录 SHA-256 后执行四态启动（关闭态 / 自由模式 / 受管多扩展 `--disable-extensions-except` / 篡改 fail-closed）。
 
 ## 4. 核心模块与职责划分
 

@@ -1,7 +1,7 @@
 ---
 slug: browser_isolation
 status: active
-tasks: [baseline, t003, t041, t051, t075, t080, t097, t102]
+tasks: [baseline, t003, t041, t051, t075, t080, t097, t102, t104]
 ---
 # 需求规范：浏览器沙箱与数据隔离 (browser_isolation)
 
@@ -39,6 +39,7 @@ tasks: [baseline, t003, t041, t051, t075, t080, t097, t102]
 ├── cbrowser.db
 ├── settings/
 ├── engine-cache/                     # 只读挂载：统一引擎二进制缓存（/data/engine-cache:ro）
+├── extensions/                       # 只读按资产精确挂载：受管扩展资产（/run/cbrowser/extensions/{asset_id}:ro）
 ├── profiles/
 │   └── {profile_id}/
 │       └── profile/                 # 读写挂载：浏览器真实用户数据（/data/profiles/{id}/profile）
@@ -71,6 +72,12 @@ tasks: [baseline, t003, t041, t051, t075, t080, t097, t102]
 - 平台一致性：`navigator.platform`、UA 与 UA-CH `platform` / `platformVersion` 与所选平台一致；CH `architecture=arm` 与 windows UA `x64` 的差异按用户裁决不做半套覆盖（`d032` + `p045`）。
 - 失败封闭：绑定字体集缺失或 manifest / 文件不一致时启动失败并报告 `font_set_unavailable`；字体源目录在宿主不存在时 Supervisor 挂载构造即失败，绝不由 daemon 建空目录后零字体启动（t075）。Runner 启动前以真实 `fc-list` 枚举验证有效字体集合，结论不合格不启动。
 - 平台字体不进入任何镜像层与 git 仓库；`font_bundle` 已删除（AC-009）。
+
+### 2.5 受管扩展沙箱隔离与 Proxy Passkey 边界（t104）
+
+- **按绑定精确只读挂载**：Supervisor 仅在 Profile 运行快照同时满足 `allow_extensions=True` 与非空 `extension_ids` 时，经 `extension_mount` 把受绑定资产目录只读挂载到 Browser 容器 `/run/cbrowser/extensions/{asset_id}`（逐资产子路径 `:ro`）；`allow_extensions=False` 或自由模式空列表不挂载任何扩展目录，不挂载整个 `/data/extensions` 根目录，**Stream 容器严禁接收任何扩展挂载**。
+- **跨 Profile 存储与状态隔离**：每个 Profile 的扩展本地存储（`chrome.storage.local`、Service Worker 状态与 Vault 缓存）落在该 Profile 自有的 `/data/profiles/{id}/profile/Default/Local Extension Settings` 等隔离 `user_data_dir` 内；两 Profile 之间扩展加载状态与存储严格隔离。容器停机前对运行中 Browser 执行优雅停机（`stop(timeout=8)`）再移除容器，确保 `Preferences` 与自由模式加载路径跨重启可靠落盘。
+- **受限出站扩展同步**：扩展（含官方 Bitwarden MV3 扩展）运行在所属 Profile 同一套 CloakBrowser 代理 + Policy Agent 双栈 `OUTPUT -j DROP` 防泄露策略内，所有扩展/Vault/WebAuthn RP 网络通信严格经由配置的 Profile 代理转发，禁止直连旁路；开启扩展或导入敏感凭据扩展时的指纹面与本地凭据/Vault 缓存隔离由界面与文档显式警示。
 
 ## 3. 验收标准
 

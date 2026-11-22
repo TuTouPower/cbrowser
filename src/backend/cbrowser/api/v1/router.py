@@ -324,7 +324,8 @@ async def create_profile(
             if payload.include_cjk_fonts is not None
             else default_include_cjk_fonts(payload.locale)
         ),
-        extension_paths=payload.extension_paths,
+        allow_extensions=payload.allow_extensions,
+        extension_ids=payload.extension_ids,
         set_google_default=payload.set_google_default,
         capture_preview=payload.capture_preview,
         restore_session=payload.restore_session,

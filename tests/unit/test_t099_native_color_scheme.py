@@ -213,7 +213,7 @@ async def test_start_writes_native_scheme_before_launch(tmp_path, monkeypatch):
         return _FakeContext()
 
     monkeypatch.setattr(
-        runner_mod, "launch_persistent_context_async", fake_launch
+        runner_mod, "launch_stealth_persistent_context", fake_launch
     )
 
     await runner.start()

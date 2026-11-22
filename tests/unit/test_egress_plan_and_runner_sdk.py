@@ -294,7 +294,7 @@ async def test_browser_runner_passes_sdk_proxy_kwarg_and_hardening_flags(
         )
         return _FakeContext()
 
-    monkeypatch.setattr(runner_mod, "launch_persistent_context_async", fake_launch)
+    monkeypatch.setattr(runner_mod, "launch_stealth_persistent_context", fake_launch)
 
     await runner.start()
     try:
@@ -348,7 +348,7 @@ async def test_browser_runner_fails_closed_before_launch_on_stale_creds(
     )
     monkeypatch.setattr(runner_mod, "PROXY_CREDENTIALS_PATH", creds_path)
     launch_mock = AsyncMock()
-    monkeypatch.setattr(runner_mod, "launch_persistent_context_async", launch_mock)
+    monkeypatch.setattr(runner_mod, "launch_stealth_persistent_context", launch_mock)
 
     runner = runner_mod.BrowserRunner(
         profile_id="prof_1",

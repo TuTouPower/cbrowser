@@ -246,6 +246,7 @@ function makeStub(options: StubOptions = {}) {
     groups: { list: vi.fn(async () => [] as GroupResponse[]) },
     proxies: { list: vi.fn(async () => [] as ProxyResponse[]) },
     fontSets: { list: vi.fn(async () => ({ items: [], default_font_set_id: { windows: null, macos: null } })) },
+    extensions: { list: vi.fn(async () => ({ items: [] })) },
   };
   return { client: spies as unknown as ApiClient, spies };
 }

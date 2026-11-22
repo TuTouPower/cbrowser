@@ -1,0 +1,43 @@
+"""Managed Chromium extension archive validation, identity derivation, and verification."""
+
+from .manifest import (
+    ALLOWED_ICON_EXTENSIONS,
+    CHROMIUM_EXTENSION_ID_RE,
+    EXTENSION_ASSET_ID_RE,
+    EXTENSION_MOUNT_ROOT,
+    EXTENSIONS_DIR_NAME,
+    MAX_EXTENSION_ARCHIVE_BYTES,
+    MAX_EXTENSION_FILES,
+    MAX_EXTENSION_UNPACKED_BYTES,
+    ExtensionPackageError,
+    ParsedExtensionPackage,
+    compute_tree_identity,
+    crx_id_from_pubkey_der,
+    extract_crx_archive,
+    materialize_extension_directory,
+    parse_extension_archive,
+    parse_manifest_key,
+    resolve_extensions_root,
+    verify_extension_directory,
+)
+
+__all__ = [
+    "ALLOWED_ICON_EXTENSIONS",
+    "CHROMIUM_EXTENSION_ID_RE",
+    "EXTENSION_ASSET_ID_RE",
+    "EXTENSION_MOUNT_ROOT",
+    "EXTENSIONS_DIR_NAME",
+    "ExtensionPackageError",
+    "MAX_EXTENSION_ARCHIVE_BYTES",
+    "MAX_EXTENSION_FILES",
+    "MAX_EXTENSION_UNPACKED_BYTES",
+    "ParsedExtensionPackage",
+    "compute_tree_identity",
+    "crx_id_from_pubkey_der",
+    "extract_crx_archive",
+    "materialize_extension_directory",
+    "parse_extension_archive",
+    "parse_manifest_key",
+    "resolve_extensions_root",
+    "verify_extension_directory",
+]
