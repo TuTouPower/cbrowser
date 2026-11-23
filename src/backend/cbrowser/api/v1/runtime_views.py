@@ -5,10 +5,13 @@ from __future__ import annotations
 from typing import Any
 
 from cbrowser.domain.models import (
+    ProfileControlStateData,
     ProfileRuntime,
     ProfileRuntimeResponse,
+    ProfileRuntimeStatusEvent,
     SearchDefaultsStatusData,
     TransportObservationData,
+    config_pending,
 )
 from fastapi import Request
 from cbrowser.shared.fencing import fence_by_instance
@@ -34,7 +37,10 @@ def fence_transport(
 
 
 async def make_runtime_response(
-    rt: ProfileRuntime, coordinator: Any = None
+    rt: ProfileRuntime,
+    coordinator: Any = None,
+    *,
+    current_config_version: int,
 ) -> ProfileRuntimeResponse:
     last_error = (
         coordinator.get_last_error(rt.profile_id, runtime=rt)
@@ -74,6 +80,7 @@ async def make_runtime_response(
         observed_state=rt.observed_state,
         runtime_instance_id=rt.runtime_instance_id,
         config_version=rt.config_version,
+        config_pending=config_pending(current_config_version, rt),
         state_revision=rt.state_revision,
         failure_count=rt.failure_count,
         restart_blocked=rt.restart_blocked,
@@ -91,6 +98,41 @@ async def make_runtime_response(
         backoff_started_at=rt.backoff_started_at,
         next_retry_at=rt.next_retry_at,
         preview_captured_at=rt.preview_captured_at,
+        updated_at=rt.updated_at,
+    )
+
+
+def make_runtime_event_data(
+    rt: ProfileRuntime,
+    current_config_version: int,
+    *,
+    last_coordinator_error: str | None = None,
+    search_defaults: SearchDefaultsStatusData | None = None,
+    transport: TransportObservationData | None = None,
+    control: ProfileControlStateData | None = None,
+    font_set_id: str | None = None,
+    missing_fonts: list[str] | None = None,
+) -> ProfileRuntimeStatusEvent:
+    return ProfileRuntimeStatusEvent(
+        profile_id=rt.profile_id,
+        desired_state=rt.desired_state,
+        observed_state=rt.observed_state,
+        runtime_instance_id=rt.runtime_instance_id,
+        config_version=rt.config_version,
+        config_pending=config_pending(current_config_version, rt),
+        state_revision=rt.state_revision,
+        failure_count=rt.failure_count,
+        restart_blocked=rt.restart_blocked,
+        last_started_at=rt.last_started_at,
+        last_stopped_at=rt.last_stopped_at,
+        browser_product=rt.browser_product,
+        browser_user_agent=rt.browser_user_agent,
+        font_set_id=font_set_id,
+        missing_fonts=missing_fonts or [],
+        last_coordinator_error=last_coordinator_error,
+        search_defaults=search_defaults,
+        transport=transport,
+        control=control,
         updated_at=rt.updated_at,
     )
 

@@ -46,6 +46,7 @@ function makeBackend() {
       observed_state: state.observed,
       runtime_instance_id: state.instance,
       config_version: 1,
+      config_pending: false,
       state_revision: 1,
       failure_count: 0,
       restart_blocked: false,

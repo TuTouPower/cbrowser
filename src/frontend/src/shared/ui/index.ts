@@ -30,6 +30,7 @@ export {
 } from "./Table";
 export { EmptyState } from "./EmptyState";
 export { Banner } from "./Banner";
+export { ConfigPendingNotice } from "./ConfigPendingNotice";
 export { Dialog } from "./Dialog";
 export { DropdownMenu } from "./DropdownMenu";
 export type { MenuAction } from "./DropdownMenu";

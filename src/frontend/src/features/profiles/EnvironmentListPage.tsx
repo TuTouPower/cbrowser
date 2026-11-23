@@ -35,6 +35,7 @@ import {
   useCreateDeletionsMutation,
   useDeletionBatchQuery,
   useDuplicateProfileMutation,
+  useApplyConfigRestart,
   useGroupCandidatesQuery,
   useGroupQuery,
   useProfilesCollectionQuery,
@@ -62,6 +63,7 @@ function projectionToRuntime(
     observed_state: projection.observed_state,
     runtime_instance_id: projection.runtime_instance_id ?? null,
     config_version: projection.config_version,
+    config_pending: projection.config_pending,
     state_revision: projection.state_revision,
     failure_count: projection.failure_count,
     restart_blocked: projection.restart_blocked,
@@ -247,6 +249,10 @@ export function EnvironmentListPage() {
   const createDeletions = useCreateDeletionsMutation(client);
   const deletionBatch = useDeletionBatchQuery(deletionBatchId, client);
   const retryDeletion = useRetryDeletionMutation(client);
+  const apply = useApplyConfigRestart(client);
+  const applyPendingId =
+    visibleRows.find((row) => apply.scope(row.profile.id).isPending)?.profile
+      .id ?? null;
 
   const openDeleteDialog = useCallback((rows: EnvironmentRow[]) => {
     setDeletionBatchId(null);
@@ -379,6 +385,8 @@ export function EnvironmentListPage() {
           onToggle={toggle}
           onToggleAll={toggleAll}
           onAction={handleAction}
+          onApplyConfig={(id) => apply.apply(id)}
+          applyPendingId={applyPendingId}
         />
       ) : (
         <EnvironmentCardGrid
@@ -387,6 +395,8 @@ export function EnvironmentListPage() {
           onToggle={toggle}
           onAction={handleAction}
           previewCapturedAtById={previewCapturedAtById}
+          onApplyConfig={(id) => apply.apply(id)}
+          applyPendingId={applyPendingId}
         />
       )}
 

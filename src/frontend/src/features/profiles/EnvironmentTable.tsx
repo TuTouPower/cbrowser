@@ -19,6 +19,7 @@ import type {
 import {
   Button,
   Checkbox,
+  ConfigPendingNotice,
   GroupChip,
   IconButton,
   StatusBadge,
@@ -202,12 +203,16 @@ export function EnvironmentTable({
   onToggle,
   onToggleAll,
   onAction,
+  onApplyConfig,
+  applyPendingId,
 }: {
   rows: EnvironmentRow[];
   selected: Set<string>;
   onToggle: (id: string, checked: boolean) => void;
   onToggleAll: (checked: boolean) => void;
   onAction: (action: EnvironmentAction, row: EnvironmentRow) => void;
+  onApplyConfig: (id: string) => void;
+  applyPendingId?: string | null;
 }) {
   const { t } = useI18n();
   const allSelected =
@@ -332,6 +337,14 @@ export function EnvironmentTable({
                     ) : (
                       <StatusBadge tone={status.tone} label={t(status.label)} />
                     )}
+                    <ConfigPendingNotice
+                      pending={Boolean(row.runtime?.config_pending)}
+                      isPending={applyPendingId === id}
+                      variant="inline"
+                      testId={`env-config-pending-${id}`}
+                      applyTestId={`env-config-apply-${id}`}
+                      onApply={() => onApplyConfig(id)}
+                    />
                   </div>
                 </TableCell>
                 <TableCell>

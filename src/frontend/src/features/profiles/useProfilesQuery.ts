@@ -718,6 +718,18 @@ export function useApplyDisplaySettingsMutation(
   });
 }
 
+export function useApplyConfigRestart(client: ApiClient = defaultApiClient) {
+  const mutation = useApplyDisplaySettingsMutation(client);
+  return {
+    apply: (
+      profileId: string,
+      options?: { onSuccess?: () => void; onError?: (error: Error) => void },
+    ) => mutation.mutate(profileId, options),
+    scope: (profileId: string) =>
+      scopeMutationToProfile(mutation, profileId, (target) => target),
+  };
+}
+
 /** Fields shared by the per-profile runtime response and a
  * collection row's runtime projection — an SSE runtime event merges
  * into both from the same fields. */
@@ -726,6 +738,7 @@ interface RuntimeSharedFields {
   observed_state: "stopped" | "starting" | "running" | "stopping" | "error";
   runtime_instance_id?: string | null;
   config_version: number;
+  config_pending: boolean;
   state_revision?: number;
   failure_count: number;
   restart_blocked: boolean;
@@ -801,6 +814,7 @@ function projectionFromEvent(
     desired_state: event.desired_state,
     observed_state: event.observed_state,
     config_version: event.config_version ?? 1,
+    config_pending: event.config_pending,
     state_revision: event.state_revision ?? 0,
     runtime_instance_id: event.runtime_instance_id ?? null,
     failure_count: event.failure_count ?? 0,
@@ -826,6 +840,7 @@ function mergeProjection(
         ? event.runtime_instance_id
         : base.runtime_instance_id,
     config_version: event.config_version ?? base.config_version,
+    config_pending: event.config_pending,
     state_revision: event.state_revision ?? base.state_revision,
     failure_count: event.failure_count ?? base.failure_count,
     restart_blocked: event.restart_blocked ?? base.restart_blocked,
@@ -854,6 +869,7 @@ function projectionsEqual(
     a.observed_state === b.observed_state &&
     a.runtime_instance_id === b.runtime_instance_id &&
     a.config_version === b.config_version &&
+    a.config_pending === b.config_pending &&
     a.state_revision === b.state_revision &&
     a.failure_count === b.failure_count &&
     a.restart_blocked === b.restart_blocked &&
@@ -970,6 +986,7 @@ function revisionWitness(
       desired_state: runtime.desired_state,
       observed_state: runtime.observed_state,
       config_version: runtime.config_version,
+      config_pending: runtime.config_pending,
       state_revision: runtime.state_revision,
       runtime_instance_id: runtime.runtime_instance_id,
       failure_count: runtime.failure_count,
@@ -1092,6 +1109,7 @@ export function applyRuntimeResponseToCollections(
       desired_state: runtime.desired_state,
       observed_state: runtime.observed_state,
       config_version: runtime.config_version,
+      config_pending: runtime.config_pending,
       state_revision: runtime.state_revision ?? 0,
       runtime_instance_id: runtime.runtime_instance_id ?? null,
       failure_count: runtime.failure_count,
@@ -1156,6 +1174,7 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
             ? event.runtime_instance_id
             : base.runtime_instance_id,
         config_version: event.config_version ?? base.config_version,
+        config_pending: event.config_pending,
         state_revision: event.state_revision ?? base.state_revision,
         failure_count: event.failure_count ?? base.failure_count,
         restart_blocked: event.restart_blocked ?? base.restart_blocked,
@@ -1181,6 +1200,7 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
         next.desired_state !== base.desired_state ||
         next.runtime_instance_id !== base.runtime_instance_id ||
         next.config_version !== base.config_version ||
+        next.config_pending !== base.config_pending ||
         next.state_revision !== base.state_revision ||
         next.failure_count !== base.failure_count ||
         next.restart_blocked !== base.restart_blocked ||

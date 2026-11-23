@@ -420,6 +420,16 @@ class ProfileRuntime(BaseModel):
     updated_at: str
 
 
+def config_pending(
+    current_config_version: int, runtime: ProfileRuntime | None
+) -> bool:
+    return (
+        runtime is not None
+        and runtime.observed_state != "stopped"
+        and current_config_version > runtime.config_version
+    )
+
+
 class RuntimeEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
     event_id: str = Field(pattern=r"^[a-zA-Z0-9_\-\.:]{1,128}$")
@@ -886,6 +896,7 @@ class ProfileRuntimeResponse(BaseModel):
     observed_state: ObservedState
     runtime_instance_id: str | None
     config_version: int
+    config_pending: bool
     # t098: per-profile monotonic revision (DB column, bumped on every
     # runtime write). Collection reads, operation results and SSE events
     # all fence on this one counter, so their arrival order cannot roll
@@ -918,6 +929,7 @@ class ProfileRuntimeStatusEvent(BaseModel):
     # t076 AC-003: the bound config version travels with every event so
     # consumers can fence stale events from an old instance/config.
     config_version: int = 1
+    config_pending: bool
     # t098: the monotonic state revision travels too; it is the single
     # fence shared with collection reads and operation results.
     state_revision: int = 0
@@ -1009,6 +1021,7 @@ class ProfileRuntimeProjection(BaseModel):
     desired_state: DesiredState
     observed_state: ObservedState
     config_version: int = 1
+    config_pending: bool
     state_revision: int = 0
     runtime_instance_id: str | None = None
     failure_count: int = 0
@@ -1020,11 +1033,14 @@ class ProfileRuntimeProjection(BaseModel):
     updated_at: str = ""
 
     @classmethod
-    def from_runtime(cls, rt: "ProfileRuntime") -> "ProfileRuntimeProjection":
+    def from_runtime(
+        cls, rt: "ProfileRuntime", current_config_version: int
+    ) -> "ProfileRuntimeProjection":
         return cls(
             desired_state=rt.desired_state,
             observed_state=rt.observed_state,
             config_version=rt.config_version,
+            config_pending=config_pending(current_config_version, rt),
             state_revision=rt.state_revision,
             runtime_instance_id=rt.runtime_instance_id,
             failure_count=rt.failure_count,

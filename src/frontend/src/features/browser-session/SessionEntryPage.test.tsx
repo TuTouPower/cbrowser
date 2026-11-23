@@ -100,6 +100,7 @@ function runtime(
     observed_state: observed,
     runtime_instance_id: "inst-1",
     config_version: 1,
+    config_pending: false,
     state_revision: 1,
     failure_count: 0,
     restart_blocked: false,
@@ -119,6 +120,7 @@ function projectionOf(rt: ProfileRuntimeResponse) {
     desired_state: rt.desired_state,
     observed_state: rt.observed_state,
     config_version: rt.config_version,
+    config_pending: rt.config_pending,
     state_revision: rt.state_revision,
     runtime_instance_id: rt.runtime_instance_id,
     failure_count: rt.failure_count,
@@ -336,5 +338,24 @@ describe("SessionEntryPage", () => {
           (call[0] as Record<string, unknown>).status === "running_exact",
       ),
     ).toBe(true);
+  });
+});
+
+describe("SessionEntryPage t106 待应用读模型", () => {
+  it("运行中环境的 config_pending 显示提示与应用入口且链接仍可跳转", async () => {
+    const p = profile();
+    const client = makeStub(
+      [p],
+      { p1: runtime("p1", "running", { config_pending: true }) },
+    );
+    renderPage(client);
+    expect(await screen.findByTestId("sess-entry-config-pending-p1")).toHaveTextContent(
+      en.sessApplyPending,
+    );
+    expect(screen.getByTestId("sess-entry-config-apply-p1")).toBeInTheDocument();
+    expect(screen.getByTestId(SESS_ENTRY_LINK)).toHaveAttribute(
+      "href",
+      "/session/p1",
+    );
   });
 });

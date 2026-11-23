@@ -27,6 +27,7 @@ from cbrowser.domain.models import (
     SearchDefaultsStatusData,
     TransportObservationData,
 )
+from cbrowser.api.v1.runtime_views import make_runtime_event_data
 from cbrowser.font_sets.manifest import PLATFORM_DETECTION_LABELS
 from cbrowser.services.profile_service import ProfileNotFoundError, ProfileService
 from cbrowser.shared.error_response import parse_error_response
@@ -1085,6 +1086,7 @@ class RuntimeCoordinator:
     async def publish_profile_change(self, profile_id: str) -> None:
         try:
             rt = await self.profile_service.get_runtime(profile_id)
+            profile = await self.profile_service.get_profile(profile_id)
             await self._notify_supervisor_state(runtime=rt)
             err = self.get_last_error(profile_id, runtime=rt)
             control = None
@@ -1096,21 +1098,9 @@ class RuntimeCoordinator:
             font_set_id, missing_fonts = await self.get_font_runtime(
                 profile_id, runtime=rt
             )
-            data = ProfileRuntimeEventData(
-                profile_id=rt.profile_id,
-                desired_state=rt.desired_state,
-                observed_state=rt.observed_state,
-                runtime_instance_id=rt.runtime_instance_id,
-                config_version=rt.config_version,
-                state_revision=rt.state_revision,
-                failure_count=rt.failure_count,
-                restart_blocked=rt.restart_blocked,
-                last_started_at=rt.last_started_at,
-                last_stopped_at=rt.last_stopped_at,
-                browser_product=rt.browser_product,
-                browser_user_agent=rt.browser_user_agent,
-                font_set_id=font_set_id,
-                missing_fonts=missing_fonts,
+            data = make_runtime_event_data(
+                rt,
+                profile.current_config_version,
                 last_coordinator_error=err,
                 search_defaults=self.fenced_search_defaults(
                     profile_id, rt.runtime_instance_id
@@ -1119,7 +1109,8 @@ class RuntimeCoordinator:
                     profile_id, rt.runtime_instance_id
                 ),
                 control=control,
-                updated_at=rt.updated_at,
+                font_set_id=font_set_id,
+                missing_fonts=missing_fonts,
             )
             await self.broadcaster.publish(data)
         except ProfileNotFoundError:

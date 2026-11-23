@@ -208,6 +208,8 @@ API 通过 `ExtensionCatalogService`（`services/extension_catalog.py`）与中�
 
 ### 5.10 服务端异步作业编排与轻量出口探测（t094，t095 补统一状态管道与并发）
 
+- 配置待应用事实由领域层唯一谓词派生（t106）：runtime 存在且非停止态、当前配置版本高于运行绑定版本时 `config_pending=true`；该事实随有界集合页的 runtime 投影、runtime 响应与 SSE 事件一起交付，不落 DB、不由前端比较版本得出。前端各界面只读 `config_pending`，「应用并重启」收敛为单一命令 hook（stop + 以新版本启动 + 按 Profile 隔离动作状态），列表行、卡片、工作台入口、会话页头与详情共用同一呈现单元。
+
 - **统一状态管道（t095 AC-002）**：成员每次状态迁移只发一次 `probe_job_progress` SSE 事件：服务端在成员终态写库后推送携带只读 `processed` 的权威作业快照，前端同一处理器既把快照写入作业读模型缓存，又使代理列表查询失效重取——观测已先于事件落库，失效即取回逐条最新结果。行状态随事件逐条刷新，不靠固定间隔轮询；代理列表 Submission 时的一次失效只用于冻结作用域初值。
 
 - **作业为编排权威**：代理测速不复用旧的客户端串行循环与同步探测端点（已删除）。提交 `POST /api/v1/proxies/probe-jobs`（`proxy_ids` 或 `filters` 二选一）只做解析与冻结目标 ID 集合的短请求，立即返回 `202` + `job_id`；`GET /api/v1/proxies/probe-jobs/{job_id}` 读权威读模型，SSE `probe_job_progress` 推送进度。作业与成员持久化在 `proxy_probe_jobs` / `proxy_probe_job_members` 两张表（增量迁移 `0015_proxy_probe_jobs.py`，只进不退）；作业持 `state`（`running` / `done`）、`total` / `completed` / `failed`，成员持 `state`（`pending` / `ok` / `failed`）、脱敏 `error_code` 与观测关联。

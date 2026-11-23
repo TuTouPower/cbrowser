@@ -1,8 +1,8 @@
-import { Banner, Button } from "../../shared/ui";
+import { Banner, Button, ConfigPendingNotice } from "../../shared/ui";
 import { useI18n } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";
 import {
-  useApplyDisplaySettingsMutation,
+  useApplyConfigRestart,
   useProfileQuery,
   useProfileRuntimeQuery,
   useRetrySearchDefaultsMutation,
@@ -14,16 +14,10 @@ export function SharedProfileBanners({ profileId }: { profileId: string }) {
   const { data: profile } = useProfileQuery(profileId, client);
   const { data: runtime } = useProfileRuntimeQuery(profileId, client);
   const retryMutation = useRetrySearchDefaultsMutation(client);
-  const applyMutation = useApplyDisplaySettingsMutation(client);
+  const apply = useApplyConfigRestart(client);
+  const applyScope = apply.scope(profileId);
 
-  const searchDefaultsFailed =
-    runtime?.search_defaults?.state === "failed";
-  const displayPending = Boolean(
-    runtime &&
-      profile &&
-      runtime.config_version !== profile.current_config_version &&
-      profile.current_config_version !== undefined,
-  );
+  const searchDefaultsFailed = runtime?.search_defaults?.state === "failed";
 
   return (
     <div data-testid="profile-shared-banners" className="flex flex-col gap-sm">
@@ -39,19 +33,13 @@ export function SharedProfileBanners({ profileId }: { profileId: string }) {
           </Button>
         </Banner>
       )}
-      {displayPending && (
-        <Banner tone="warning" testId="profile-apply-pending">
-          <span>{t("detailApplyPending")}</span>
-          <Button
-            size="sm"
-            disabled={applyMutation.isPending}
-            onClick={() => applyMutation.mutate(profileId)}
-          >
-            {t("detailApplyAndRestart")}
-          </Button>
-        </Banner>
-      )}
-      {applyMutation.isError && (
+      <ConfigPendingNotice
+        pending={Boolean(profile && runtime?.config_pending)}
+        isPending={applyScope.isPending}
+        testId="profile-apply-pending"
+        onApply={() => apply.apply(profileId)}
+      />
+      {applyScope.isError && (
         <Banner tone="danger" testId="profile-apply-error">
           {t("detailApplyError")}
         </Banner>

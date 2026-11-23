@@ -120,6 +120,7 @@ async def test_last_event_id_from_previous_api_epoch_receives_snapshot(
             app = second_server.config.app
             await app.state.coordinator.broadcaster.publish(
                 ProfileRuntimeStatusEvent(
+                    config_pending=False,
                     profile_id=profile_b_id,
                     desired_state="running",
                     observed_state="starting",

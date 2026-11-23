@@ -7,7 +7,7 @@ import type {
   ProfileRuntimeResponse,
   ProxyResponse,
 } from "../../shared/api/types";
-import { Banner, Button, MonoValue } from "../../shared/ui";
+import { Banner, Button, ConfigPendingNotice, MonoValue } from "../../shared/ui";
 import { proxyProbeErrorLabelKey } from "../../shared/presentation";
 import { formatFontSetDisplayName } from "../settings/SettingsPage";
 import { formatPlatformLabel } from "../profiles/EnvironmentTable";
@@ -21,6 +21,8 @@ export interface SessionDetailsPanelProps {
   proxies: ProxyResponse[];
   fontSets: FontSetInfo[];
   open: boolean;
+  onApplyConfig: () => void;
+  applyPending?: boolean;
 }
 
 function display(value: unknown): string {
@@ -107,7 +109,7 @@ function Section({
 export function SessionDetailsPanel(props: SessionDetailsPanelProps): JSX.Element {
   const { t } = useI18n();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  const { profile, runtime, groups, proxies, fontSets, open } = props;
+  const { profile, runtime, groups, proxies, fontSets, open, onApplyConfig, applyPending } = props;
 
   const copyValue = (key: string, value: string) => {
     const clipboard = navigator.clipboard;
@@ -147,8 +149,6 @@ export function SessionDetailsPanel(props: SessionDetailsPanelProps): JSX.Elemen
   const fontSet = fontSets.find((item) => item.set_id === fontSetId);
   const missingFonts = runtime?.missing_fonts ?? [];
   const transport = runtime?.transport ?? null;
-  const configPending =
-    runtime !== null && runtime.config_version !== profile.current_config_version;
   const proxySummary = proxy ? proxy.name : t("envDirect");
   const proxyEndpoint = proxy ? `${proxy.host}:${proxy.port}` : "-";
   const proxyRegion = (() => {
@@ -291,11 +291,13 @@ export function SessionDetailsPanel(props: SessionDetailsPanelProps): JSX.Elemen
             ),
           ]}
           extra={
-            configPending ? (
-              <p className="rounded-md border border-warning bg-warning-soft px-md py-sm font-ui text-label-sm text-on-surface">
-                {t("sessApplyPending")}
-              </p>
-            ) : undefined
+            <ConfigPendingNotice
+              pending={Boolean(runtime?.config_pending)}
+              isPending={applyPending}
+              onApply={onApplyConfig}
+              variant="inline"
+              testId="sess-details-config-pending"
+            />
           }
         />
       </div>

@@ -2037,6 +2037,8 @@ export interface components {
              * @default 1
              */
             config_version: number;
+            /** Config Pending */
+            config_pending: boolean;
             /**
              * State Revision
              * @default 0
@@ -2088,6 +2090,8 @@ export interface components {
             runtime_instance_id: string | null;
             /** Config Version */
             config_version: number;
+            /** Config Pending */
+            config_pending: boolean;
             /**
              * State Revision
              * @default 0
@@ -2146,6 +2150,8 @@ export interface components {
              * @default 1
              */
             config_version: number;
+            /** Config Pending */
+            config_pending: boolean;
             /**
              * State Revision
              * @default 0

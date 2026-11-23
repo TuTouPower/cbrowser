@@ -42,6 +42,11 @@ export function environmentStatusDescriptor(
   return ENVIRONMENT_STATUS[observed] ?? ENVIRONMENT_STATUS_UNKNOWN;
 }
 
+export const CONFIG_PENDING_DESCRIPTOR: StatusDescriptor = {
+  tone: "transition",
+  label: "sessApplyPending",
+};
+
 const PROXY_PROBE_ERROR_KEYS: Record<string, TranslationKey> = {
   probe_failed: "proxyProbeFailed",
   probe_bad_response: "proxyErrorProbeBadResponse",

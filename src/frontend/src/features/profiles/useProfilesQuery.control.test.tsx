@@ -37,6 +37,7 @@ function runtimeWithControl(control: Record<string, unknown>) {
     observed_state: "running",
     runtime_instance_id: "inst_1",
     config_version: 1,
+    config_pending: false,
     state_revision: 1,
     failure_count: 0,
     restart_blocked: false,

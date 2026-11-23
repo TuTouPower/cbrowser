@@ -59,6 +59,7 @@ function runtime(
     observed_state: "running",
     runtime_instance_id: "inst-1",
     config_version: 1,
+    config_pending: false,
     state_revision: 1,
     failure_count: 0,
     restart_blocked: false,
@@ -148,6 +149,7 @@ function renderPanel(overrides: Partial<SessionDetailsPanelProps> = {}) {
     proxies: [proxy()],
     fontSets: [fontSet()],
     open: true,
+    onApplyConfig: vi.fn(),
     ...overrides,
   };
   const view = render(

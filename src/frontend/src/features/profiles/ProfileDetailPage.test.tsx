@@ -99,6 +99,7 @@ function runtime(observed: string): ProfileRuntimeResponse {
     observed_state: observed,
     runtime_instance_id: "inst_1",
     config_version: 2,
+    config_pending: true,
     state_revision: 1,
     failure_count: 0,
     restart_blocked: false,

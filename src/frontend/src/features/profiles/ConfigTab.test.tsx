@@ -105,6 +105,7 @@ function runtime(
     observed_state: observed,
     runtime_instance_id: 'inst_1',
     config_version: 1,
+    config_pending: false,
     state_revision: 1,
     failure_count: 0,
     restart_blocked: false,
@@ -318,6 +319,10 @@ describe('ConfigTab', () => {
 
     act(() => {
       queryClient.setQueryData(profileKeys.detail('p1'), pushed);
+      queryClient.setQueryData(profileKeys.runtime('p1'), {
+        ...runtime('stopped'),
+        config_pending: true,
+      });
     });
     expect(
       queryClient.getQueryData<ProfileResponse>(profileKeys.detail('p1')),

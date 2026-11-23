@@ -14,7 +14,7 @@ import {
   useFontSetsQuery,
   useSetDesiredStateMutation,
   useStopProfileMutation,
-  useApplyDisplaySettingsMutation,
+  useApplyConfigRestart,
 } from "../profiles/useProfilesQuery";
 import { useBrowserSession } from "./useBrowserSession";
 import { deriveSessionStage } from "./session_stage";
@@ -113,24 +113,22 @@ export function SessionPage(): JSX.Element {
 
   const setDesiredStateMutation = useSetDesiredStateMutation(client);
   const stopMutation = useStopProfileMutation(client);
-  const applyMutation = useApplyDisplaySettingsMutation(client);
-  const headerPending = stopMutation.isPending || applyMutation.isPending;
+  const apply = useApplyConfigRestart(client);
+  const applyScope = apply.scope(id);
+  const headerPending = stopMutation.isPending || applyScope.isPending;
   const reloadKeyRef = useRef(session.reloadKey);
   reloadKeyRef.current = session.reloadKey;
   const handleApplyRestart = useCallback(() => {
     const before = reloadKeyRef.current;
-    applyMutation.mutate(id, {
+    apply.apply(id, {
       onSuccess: () => {
         if (reloadKeyRef.current === before) session.reconnect();
       },
     });
-  }, [applyMutation, id, session]);
+  }, [apply, id, session]);
   const applyErrorMessage =
-    applyMutation.error instanceof Error
-      ? applyMutation.error.message
-      : applyMutation.isError
-        ? t("runtimeStateUnknown")
-        : null;
+    applyScope.error?.message ??
+    (applyScope.isError ? t("runtimeStateUnknown") : null);
 
   const handleDetailsOpenChange = useCallback((open: boolean) => {
     setDetailsOpen(open);
@@ -276,6 +274,8 @@ export function SessionPage(): JSX.Element {
               proxies={proxiesQuery.data ?? []}
               fontSets={fontSetsQuery.data?.items ?? []}
               open={detailsOpen}
+              onApplyConfig={handleApplyRestart}
+              applyPending={applyScope.isPending}
             />
           </div>
         </div>

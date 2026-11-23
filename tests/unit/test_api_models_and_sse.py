@@ -10,6 +10,7 @@ from cbrowser.domain.models import (
 
 def test_profile_runtime_response_last_coordinator_error():
     rt = ProfileRuntimeResponse(
+        config_pending=False,
         profile_id="p1",
         display_number=1,
         desired_state="running",
@@ -25,6 +26,7 @@ def test_profile_runtime_response_last_coordinator_error():
     assert rt.last_coordinator_error == "Supervisor unreachable"
 
     rt_default = ProfileRuntimeResponse(
+        config_pending=False,
         profile_id="p1",
         display_number=1,
         desired_state="stopped",
@@ -46,6 +48,7 @@ async def test_sse_broadcaster_initial_snapshot():
     async def snapshot_provider():
         return [
             ProfileRuntimeStatusEvent(
+                config_pending=False,
                 profile_id="p_snap",
                 desired_state="stopped",
                 observed_state="stopped",
@@ -64,6 +67,7 @@ def test_profile_runtime_status_event_exposes_font_set_state():
     """t041 AC-007: the runtime status event reports the bound font set and
     the detection fonts missing from it, defaulting to the unconfigured state."""
     unconfigured = ProfileRuntimeStatusEvent(
+        config_pending=False,
         profile_id="p1",
         desired_state="running",
         observed_state="stopped",
@@ -78,7 +82,8 @@ def test_profile_runtime_status_event_exposes_font_set_state():
         "desired_state": "running",
         "observed_state": "stopped",
         "runtime_instance_id": None,
-        "config_version": 1,  # t076 AC-003: SSE fencing version
+            "config_version": 1,  # t076 AC-003: SSE fencing version
+            "config_pending": False,
         "state_revision": 0,  # t098: monotonic SSE/collection fencing revision
         "failure_count": 1,
         "restart_blocked": False,
@@ -98,6 +103,7 @@ def test_profile_runtime_status_event_exposes_font_set_state():
     assert unconfigured.model_dump()["missing_fonts"] == []
 
     bound = ProfileRuntimeStatusEvent(
+        config_pending=False,
         profile_id="p1",
         desired_state="running",
         observed_state="running",

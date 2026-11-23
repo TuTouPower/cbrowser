@@ -125,6 +125,7 @@ function runtime(
     observed_state: observed,
     runtime_instance_id: "inst-1",
     config_version: 1,
+    config_pending: false,
     state_revision: 1,
     failure_count: 0,
     restart_blocked: false,
@@ -353,7 +354,7 @@ describe("SessionHeader", () => {
     expect(screen.queryByTestId(APPLY_PENDING_ID)).toBeNull();
   });
 
-  it("config_version 与 current_config_version 相等时不显示待应用标记", () => {
+  it("config_pending 为假时不显示待应用标记", () => {
     renderHeader(
       fixture({ runtime: runtime("p1", "running", { config_version: 1 }) }),
     );
@@ -363,9 +364,9 @@ describe("SessionHeader", () => {
     expect(screen.queryByTestId(SESS_APPLY_RESTART)).toBeNull();
   });
 
-  it("config_version 不等时显示待应用标记，点击应用并重启调用 onApplyRestart", () => {
+  it("config_pending 为真时显示待应用标记，点击应用并重启调用 onApplyRestart", () => {
     const props = fixture({
-      runtime: runtime("p1", "running", { config_version: 2 }),
+      runtime: runtime("p1", "running", { config_version: 2, config_pending: true }),
     });
     renderHeader(props);
 
@@ -431,7 +432,7 @@ describe("SessionHeader", () => {
 
   it("页头不使用 primary 按钮", () => {
     renderHeader(
-      fixture({ runtime: runtime("p1", "running", { config_version: 2 }) }),
+      fixture({ runtime: runtime("p1", "running", { config_version: 2, config_pending: true }) }),
     );
 
     const primaryButtons = within(screen.getByTestId(SESS_HEADER))
@@ -464,7 +465,7 @@ describe("SessionHeader", () => {
   it("isPending 时 Stop 与 Apply 并重启禁用", () => {
     renderHeader(
       fixture({
-        runtime: runtime("p1", "running", { config_version: 2 }),
+        runtime: runtime("p1", "running", { config_version: 2, config_pending: true }),
         isPending: true,
       }),
     );
@@ -478,7 +479,7 @@ describe("SessionHeader", () => {
     // 真正的 apply error Banner 由 SessionPage.test 覆盖。
     renderHeader(
       fixture({
-        runtime: runtime("p1", "running", { config_version: 2 }),
+        runtime: runtime("p1", "running", { config_version: 2, config_pending: true }),
         isPending: false,
       }),
     );

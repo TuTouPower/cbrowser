@@ -29,6 +29,7 @@ function runtimeFor(id: string, observed = "stopped", error: string | null = nul
     observed_state: observed,
     runtime_instance_id: null,
     config_version: 1,
+    config_pending: false,
     state_revision: 1,
     failure_count: 0,
     restart_blocked: false,

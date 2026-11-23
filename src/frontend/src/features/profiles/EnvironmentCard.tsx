@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { AlertCircle } from "lucide-react";
 import { useI18n } from "../../i18n";
-import { Checkbox, GroupChip, StatusBadge, Tooltip } from "../../shared/ui";
+import { Checkbox, ConfigPendingNotice, GroupChip, StatusBadge, Tooltip } from "../../shared/ui";
 import { formatRelativeTime } from "./formatRelativeTime";
 import {
   DirectNetwork,
@@ -20,12 +20,16 @@ export function EnvironmentCard({
   onToggle,
   onAction,
   previewCapturedAt,
+  onApplyConfig,
+  applyPending,
 }: {
   row: EnvironmentRow;
   selected: boolean;
   onToggle: (id: string, checked: boolean) => void;
   onAction: (action: EnvironmentAction, row: EnvironmentRow) => void;
   previewCapturedAt?: string | null;
+  onApplyConfig: (id: string) => void;
+  applyPending?: boolean;
 }) {
   const { t } = useI18n();
   const id = row.profile.id;
@@ -96,6 +100,14 @@ export function EnvironmentCard({
       </div>
       <div className="flex flex-wrap items-center gap-sm">
         <StatusBadge tone={status.tone} label={t(status.label)} />
+        <ConfigPendingNotice
+          pending={Boolean(row.runtime?.config_pending)}
+          isPending={applyPending}
+          variant="inline"
+          testId={`env-config-pending-${id}`}
+          applyTestId={`env-config-apply-${id}`}
+          onApply={() => onApplyConfig(id)}
+        />
         {row.group ? (
           <GroupChip label={row.group.name} hue={row.group.color} />
         ) : (

@@ -19,6 +19,7 @@
 |**运行时沙箱**|`BrowserRuntime`|托管单个 Profile 的隔离容器实例，生命周期受 Supervisor 调度。|
 |**运行时代理**|`RuntimeAgent`|运行在容器内部的 Python 守护进程，负责输入代理、下载监听、GTK 书签注入与健康汇报。|
 |**容器协调器**|`RuntimeSupervisor`|宿主端容器调度器，唯一定义容器模板、分配媒体 UDP 端口池并执行生命周期操作。|
+|**配置待应用**|`config_pending`|从 `Profile.current_config_version` 与运行绑定 `config_version` 派生的只读事实（t106）：runtime 存在、非停止态且当前版本更高时为真。不存储、不写 DB，随 collection 行投影、runtime 响应与 SSE 事件交付，是所有界面唯一的待应用判据。|
 |**文件归档**|`Artifact`|用户上传到浏览器环境或浏览器内下载完成的文件元数据记录，包含 SHA-256、体积与配额信息。|
 |**文件交换区**|`ExchangeDirectory`|宿主机与容器共享的持久化上传/下载暂存目录，按 Profile 严格隔离。|
 |**指纹平台**|`ProfileConfig.fingerprint_platform`|Profile 绑定的反指纹目标平台，取值 `windows`（默认）/ `macos`；CloakBrowser 只支持这两种，无 Linux 平台。属运行配置，变更产生新 `ProfileConfigVersion`（t041）。|

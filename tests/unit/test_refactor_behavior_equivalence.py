@@ -297,13 +297,13 @@ async def test_runtime_view_helpers() -> None:
     )
 
     # t031: make_runtime_response became async (control best-effort load).
-    response = await make_runtime_response(runtime, coordinator)
+    response = await make_runtime_response(runtime, coordinator, current_config_version=1)
 
     assert response.profile_id == "p1"
     assert response.last_coordinator_error == "boom"
     assert response.updated_at == runtime.updated_at
     assert (
-        await make_runtime_response(runtime)
+        await make_runtime_response(runtime, current_config_version=1)
     ).last_coordinator_error is None
     assert resolve_operation_id("idem", "x", "query") == "idem"
     assert resolve_operation_id(None, "x", "query") == "x"
