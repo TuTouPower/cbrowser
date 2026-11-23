@@ -5,14 +5,14 @@ title: "配置变更待应用状态统一并在环境管理列表暴露"
 status: "backlog"
 branch: ""
 worktree: ""
-review_level: "single"
+review_level: "full"
 review_limit: "5"
 verify_limit: "5"
 diff_anchor: ""
 spec_source_sha: ""
 depends_on: ""
 conflicts_with: ""
-note: "来源 p170；用户裁决行内提供应用并重启"
+note: "来源 p170；用户裁决行内提供应用并重启; 架构复核升级：config_pending 作为领域派生事实进入读模型，前端删除版本比较式"
 ---
 
 # Task 进展
