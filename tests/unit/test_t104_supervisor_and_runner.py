@@ -472,7 +472,7 @@ def test_restore_point_backs_up_verifies_and_restores_extensions(tmp_path: Path)
     conn = sqlite3.connect(db_path)
     try:
         conn.execute("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
-        conn.execute("INSERT INTO alembic_version VALUES ('e10400170001')")
+        conn.execute("INSERT INTO alembic_version VALUES ('b2c3d4e5f601')")
         conn.execute(
             "CREATE TABLE profiles (id TEXT PRIMARY KEY, user_data_dir TEXT, current_config_version INTEGER)"
         )

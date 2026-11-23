@@ -156,7 +156,6 @@ class ProxyResponse(BaseModel):
     latency_ms: int | None = None
     observation_error_code: str | None = None
     observed_at: str | None = None
-    expires_at: str | None = None
     region_label: str | None = None
     notes: str | None = None
     used_by_count: int = 0

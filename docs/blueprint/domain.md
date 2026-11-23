@@ -10,7 +10,7 @@
 |**分组**|`ProfileGroup`|Profile 的命名分组库条目（名称唯一、颜色取自调色板、可排序）。删除分组后引用它的 Profile 的 `group_id` 置 null。|
 |**代理**|`Proxy`|可复用的代理连接库条目。录入唯一入口是代理链接（t052，见下）；密码只存于代理库，版本号 `credential_revision` 随密码变更递增；被任一 Profile 引用时删除返回 409 `proxy_in_use`。国家码不再是可写字段，是出口观测的只读派生值。|
 |**代理端点**|`ProxyEndpoint`|代理连接的值对象（t052）：`scheme` / `host` / `port` / `username` + 只写秘密 `password`。端点指纹由 scheme/host/port/username 派生（sha256，不含密码）；密码轮换不改变指纹。|
-|**出口观测**|`ProxyEgressObservation`|一次出口探测的结果（t052，t074 扩展）：代理、端点指纹、凭据版本、视角（`browser`）、出口 IP、国家码 / 国家名 / 城市、经代理真实网络往返延迟毫秒（`latency_ms`）、来源、状态（`unknown` / `pending` / `ok` / `failed`）、脱敏错误码、观测时间与过期时间（TTL 24 小时）。观测只追加历史行；当前有效观测须 status 为 ok、指纹与凭据版本均与现端点一致、未过期。|
+|**出口观测**|`ProxyEgressObservation`|一次出口探测的结果（t052，t074 扩展，t105 取消 TTL）：代理、端点指纹、凭据版本、视角（`browser`）、出口 IP、国家码 / 国家名 / 城市、经代理真实网络往返延迟毫秒（`latency_ms`）、来源、状态（`unknown` / `pending` / `ok` / `failed`）、脱敏错误码与观测时间。出口地理与测速结果同属一条快照元组，同生共死；观测只追加历史行，无过期时间。当前有效观测 = 最新一行且端点指纹与凭据版本匹配当前端点；`ok` 另需出口 IP 与国家码。|
 |**用户设置**|`UserSettings`|控制面系统级 UI 偏好（t074）：`theme: Literal["system","light","dark"]`（默认 `dark`）、`locale: Literal["en","zh"]`（默认 `zh`）。持久化于 `settings` 表键 `ui.theme` / `ui.locale`，经 `GET /api/v1/settings` / `PATCH /api/v1/settings` 受会话鉴权与 CSRF 保护读写；清缓存或重新登录后保持。|
 |**运行配置版本**|`ProfileConfigVersion`|不可变的运行参数快照。只有运行配置字段值变化才生成新版本，需重启运行时才能生效；配置版本快照只存 `proxy_id` 与 `proxy_credential_revision`，不含密码（t035）。|
 |**期望状态**|`DesiredState`|用户或系统声明的目标运行态（如 `running` 或 `stopped`）。持久化于数据库。|
@@ -59,7 +59,7 @@
 
 ## 集合查询与代理引用并集（t076）
 
-- **集合投影**：环境 / 代理 / 分组列表由服务端集合页提供（搜索、筛选、稳定排序、总数、有界分页）；`CollectionPage` 的 `total` 计全量筛选集，`page_size` 钳制 1..100。有界候选按名称检索，`limit` 钳制 1..50；国家→城市范围以后端聚合为准，键为稳定国家代码，聚合口径与集合筛选一致：每代理只取最新且仍有效的观测（过期 ok 行不计入），不聚历史行。
+- **集合投影**：环境 / 代理 / 分组列表由服务端集合页提供（搜索、筛选、稳定排序、总数、有界分页）；`CollectionPage` 的 `total` 计全量筛选集，`page_size` 钳制 1..100。有界候选按名称检索，`limit` 钳制 1..50；国家→城市范围以后端聚合为准，键为稳定国家代码，聚合口径与集合筛选一致：每代理只取最新且身份仍有效的观测（新行覆盖旧行，无时间过滤），不聚历史行。
 - **代理引用并集**：一个代理的使用环境 = 当前配置引用 ∪ 运行绑定版本引用，按环境去重，每项标 `current` / `bound` / `both`；计数、明细、导航与删除保护用同一语义。仅被运行绑定版本占用的环境仍计入并阻止删除；运行绑定解除（运行行删除）后即释放。引用聚合一次取 3 条 SELECT，不随规模增长；不通过删除运行绑定引用减少查询。
 - **运行投影（t098）**：`ProfileRuntimeProjection` 是列表渲染所需的运行状态投影（含启停/预览捕获时间、协调器错误与 `state_revision`），随有界集合页按行返回（`ProfileCollectionItem.runtime`，为空表示无运行事实）；SSE 事件、集合读取与操作结果共用 `state_revision` 单调围栏，旧修订事件不得覆盖新状态。
 - **集合选择范围**：批量操作目标按稳定 ID 与明确目标快照确定；表头全选只选当前页（`toggleAll` 为当前页语义），不以 DOM 行号或当前页数组下标作为身份。
@@ -78,13 +78,13 @@
 
 - **PATCH 语义**：`proxy_url` 省略 = 端点（含密码）不变；提供 = 整端点（含密码）整体替换，`password_supplied=True`，触发新配置版本、pending 观测与自动探测。编辑端点而密码框留空时，前端拦截提交（否则会静默清除已存密码），须重填密码或显式清除。
 
-- **国家 / 城市是观测，不是配置**：`proxies.country_code` 列由迁移 `0006` 删除（无真实用户，不做数据迁移）；`ProxyResponse.country_code` / `country_name` / `city` / `egress_ip` / `observation_status` / `latency_ms` / `observation_error_code` / `observed_at` / `expires_at` 均由当前有效观测派生。端点指纹或凭据版本变化、观测过期（TTL 24 小时）时旧观测立即失效，界面显示未测速；探测失败记 failed 行、不猜国家或城市。
+- **国家 / 城市是观测，不是配置**：`proxies.country_code` 列由迁移 `0006` 删除（无真实用户，不做数据迁移）；`ProxyResponse.country_code` / `country_name` / `city` / `egress_ip` / `observation_status` / `latency_ms` / `observation_error_code` / `observed_at` 均由当前有效观测派生。端点指纹或凭据版本变化时旧观测立即失效，界面显示未测速；探测失败记 failed 行、不猜国家或城市。t105 起快照无 TTL：结果不会随时间消失，三类状态统一按端点身份失效。
 
-- **探测视角**：观测结果自 t094 起由 API 进程内轻量探测产生，结果标识从 API 侧定义，不再由 Supervisor 在 Browser 同视角的短生命周期 helper 内执行；历史 `browser` 视角字面值仅作兼容保留，旧观测按端点指纹 / 凭据版本 / TTL 失效规则自然淘汰。出口 IP 取自 IP 回显端点（复用 cloakbrowser SDK 的 `api.ipify.org` / `checkip.amazonaws.com` / `ifconfig.me/ip`，只发一次 HTTPS GET 取自身出口 IP）；国家 / 城市主链由本机 GeoLite2（`CBROWSER_GEOIP_CACHE/GeoLite2-City.mmdb`）完整读取 `country.names` / `city.names` 判定，t074 起在线只读 HTTPS Geo 服务仅作可选城市补充（白名单、无凭据、`trust_env=False`、每请求短生命周期 client，处理 307 / 429 / TLS 失败回落，见 ADR 029 修订）。`latency_ms` 只计经代理的实际 HTTP 往返，不含容器建毁。
+- **探测视角**：观测结果自 t094 起由 API 进程内轻量探测产生，结果标识从 API 侧定义，不再由 Supervisor 在 Browser 同视角的短生命周期 helper 内执行；历史 `browser` 视角字面值仅作兼容保留，旧观测按端点指纹 / 凭据版本失效规则自然淘汰。出口 IP 取自 IP 回显端点（复用 cloakbrowser SDK 的 `api.ipify.org` / `checkip.amazonaws.com` / `ifconfig.me/ip`，只发一次 HTTPS GET 取自身出口 IP）；国家 / 城市主链由本机 GeoLite2（`CBROWSER_GEOIP_CACHE/GeoLite2-City.mmdb`）完整读取 `country.names` / `city.names` 判定，t074 起在线只读 HTTPS Geo 服务仅作可选城市补充（白名单、无凭据、`trust_env=False`、每请求短生命周期 client，处理 307 / 429 / TLS 失败回落，见 ADR 029 修订）。`latency_ms` 只计经代理的实际 HTTP 往返，不含容器建毁。
 
 - **GeoIP 路径与资源类失败（t096）**：GeoIP 数据库路径是 `GeoIpLookup` 的构造期依赖，由 API 组合根解析后显式注入 runner，不靠探测期隐藏环境变量。缺库、缺 `geoip2` 包、查询异常分别记 `geoip_db_missing` / `geoip2_missing` / `geoip_lookup_failed`，属可诊断的资源类失败，与 `echo_unreachable` 等真实网络失败类别不同；二者不得在展示层合并为笼统「测速失败」。未注入路径即判资源失败，不猜测国家 / 城市，也不在探测中崩溃。
 
-- **观测记录**：表 `proxy_egress_observations`（proxy_id FK ON DELETE CASCADE + 索引）；t074 增量迁移 `0010` 增 `country_name` / `city` / `latency_ms` 三列（revision `8c3f1d0a7b92`，`down_revision=796adb0bf159`，只进不退）。创建与端点/凭据变更后先记 pending 行再后台自动探测；t094 起手动测速提交服务端作业 `POST /api/v1/proxies/probe-jobs`（`proxy_ids` 或 `filters` 二选一，`202` + `job_id`），进度读 `GET /api/v1/proxies/probe-jobs/{job_id}` 与 SSE `probe_job_progress`。
+- **观测记录**：表 `proxy_egress_observations`（proxy_id FK ON DELETE CASCADE + 索引）；t074 增量迁移 `0010` 增 `country_name` / `city` / `latency_ms` 三列（revision `8c3f1d0a7b92`，`down_revision=796adb0bf159`，只进不退）；t105 迁移 `0018`（revision `b2c3d4e5f601`，只进不退）删除 `expires_at` 列。创建与端点/凭据变更后先记 pending 行再后台自动探测；t094 起手动测速提交服务端作业 `POST /api/v1/proxies/probe-jobs`（`proxy_ids` 或 `filters` 二选一，`202` + `job_id`），进度读 `GET /api/v1/proxies/probe-jobs/{job_id}` 与 SSE `probe_job_progress`。
 
 - **运行态扩展字段**：`ProfileRuntime` 增加 `last_started_at` / `last_stopped_at`（ISO 8601 带时区）、`browser_product` / `browser_user_agent`（来自容器内 CDP `Browser.getVersion`）；未运行时两浏览器字段为 null，进入 stopped/error 时清空。
 
@@ -99,7 +99,7 @@
 - **受配额并发（t095 AC-003）**：作业驱动以 `asyncio.Semaphore` 在服务端并发上限内并行探测，上限由 `CBROWSER_PROBE_JOB_CONCURRENCY` 配置（默认 8、非法值拒绝回退、至少 1）；所有作业成员共享同一配额，超限成员排队等待而非丢弃；单成员超时独立，整体耗时不再随代理数线性放大。计数在锁内串行推进、写库仍经 `write_transaction` 的 `BEGIN IMMEDIATE` 串行化，避免 SQLite BUSY 与竞态。
 - **冻结过滤作用域**：入参为 `proxy_ids` 或 `filters`（`search` / `country_code` / `city` / `scheme`）二选一；提交时按过滤条件解析为明确 ID 集合并冻结，后续分页、筛选变化或测速追加观测导致的归属变化都不改变在途作业目标。零匹配项返回 `total=0` 的即时终态语义。
 - **终态与失败重试**：成员逐项独立，成功落 `ok` 并关联有效观测，失败落 `failed` 并记脱敏错误码；`processed` 统计已终结成员（成功+失败），`completed` / `failed` 分别单列成功数与失败数，全部成员终结后作业转 `done` 并保留终态作审计与回读。卡住的 `pending` 按声明预算收敛为终态；重复提交、自动探测与迟到结果不得让已收敛作业再次变化。失败成员可重新提交单成员作业重试，成功项不重复执行；自动探测与手动作业共用同一执行路径与结果投影。
-- **观测表职责归位（t095 AC-004）**：`proxy_egress_observations` 只追加单次探测结果，历史行保留、TTL（24 小时）与端点指纹/凭据版本失效规则不变；它不承载「当前作业进度」或「作业当前状态」语义，这些只由作业读模型表达。
+- **观测表职责归位（t095 AC-004，t105 修订）**：`proxy_egress_observations` 只追加单次探测结果，历史行保留、无 TTL；端点指纹与凭据版本失效规则对 `ok` / `failed` / `pending` 一致生效。它不承载「当前作业进度」或「作业当前状态」语义，这些只由作业读模型表达。
 - **恢复语义**：页面刷新仅由作业读模型恢复进度、作业不中断；API 进程重启按显式规则恢复未终结作业或将其终结并暴露失败，不把内存态当作权威。
 
 ## 用户设置（t074）

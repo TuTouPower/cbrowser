@@ -2416,8 +2416,6 @@ export interface components {
             observation_error_code?: string | null;
             /** Observed At */
             observed_at?: string | null;
-            /** Expires At */
-            expires_at?: string | null;
             /** Region Label */
             region_label?: string | null;
             /** Notes */
