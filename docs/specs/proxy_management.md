@@ -1,7 +1,7 @@
 ---
 slug: proxy_management
 status: active
-tasks: [baseline, t076, t077, t079, t082, t094, t095, t096]
+tasks: [baseline, t076, t077, t079, t082, t094, t095, t096, t105]
 ---
 # 代理库界面
 
@@ -48,14 +48,14 @@ tasks: [baseline, t076, t077, t079, t082, t094, t095, t096]
 - Vitest 在 ApiClient 边界注入每例独立 stub、走真实 hooks；链接解析用表驱动纯函数测试（与后端矩阵对齐）；t074 页面测试覆盖 8 列展示（无认证列 / 无混合位置列）、国家与城市独立筛选及 URL 持久化、列表/卡片切换、密码不残留、409 引用数、`ok` 绿色延迟 / `failed` 红色错误码、HTTP 200 返回 `failed` 不误报成功、`0` / `1` / `2+` 使用环境三态交互、单条与批量闪电测速调用及 toast。
 - 真实栈 E2E（无头 Chrome）覆盖「UI 新建代理 → 环境引用该代理 → 启动 → 浏览器出站经该代理」，用本地记录代理不依赖公网。
 
-## 7. 出口观测与探测（t052）
+## 7. 出口观测与探测（t052，t105 取消 TTL）
 
-- 国家码是观测，不是配置：`ProxyResponse.country_code` / `egress_ip` / `observation_status` / `observed_at` 由当前有效观测派生（status 为 ok、端点指纹与凭据版本均与现端点一致、未过期，TTL 24 小时）。无有效观测时全部展示位显示「未知」：代理列表位置列、代理弹窗只读位置状态、会话详情代理位置。
-- 代理保存或端点 / 凭据变更后自动探测：先记 pending 行（界面显示测速中），后台探测完成后刷新为国家或未知；失败记 failed 行、不猜国家。端点指纹或凭据版本变化、观测过期时旧观测立即失效，不再显示旧国家，并自动重新探测。
+- 国家码是观测，不是配置：`ProxyResponse.country_code` / `egress_ip` / `observation_status` / `observed_at` 由当前有效观测派生（端点指纹与凭据版本均与现端点一致；`ok` 还须有出口 IP 与国家码）。无有效观测时全部展示位显示「未知」：代理列表位置列、代理弹窗只读位置状态、会话详情代理位置。t105 起观测快照无过期时间：一次成功的测速结果与其出口地理作为同一元组永久有效，直到被新观测覆盖。
+- 代理保存或端点 / 凭据变更后自动探测：先记 pending 行（界面显示测速中），后台探测完成后刷新为国家或未知；失败记 failed 行、不猜国家。端点指纹或凭据版本变化时旧观测立即失效并自动重新探测；`ok` / `failed` / `pending` 三类快照统一适用这一失效规则。
 - 测速在 API 进程内以轻量探测执行（t094）：显式 `proxy=` + `trust_env=False`、固定白名单回显、本地 GeoIP，凭证由服务端装载且不进命令行、失败无直连回退；不再有 Supervisor 短生命周期 helper、专用 bridge 或探测专属 Policy Agent。探测只提供测速与出口信息展示，隔离 / 防泄露验证由单元与真实 Docker E2E 承担（见 `docs/blueprint/testing.md`）。批量测速提交服务端作业（`POST /api/v1/proxies/probe-jobs`，入参 `proxy_ids` 或 `filters` 二选一，提交时冻结目标 ID 集合并返回 `202` + `job_id`），单条入口提交单成员作业。
 - 宿主本机端点（`127.0.0.0/8` / `localhost` / `::1`）由 Supervisor 映射为 `host.docker.internal` 并单端口放行；映射失败时启动与探测在执行前明确报错并给出处置提示，不出现启动成功但无法联网。
 - 观测记录只追加历史行（`proxy_egress_observations`）；`GET /api/v1/proxies` 与单条响应均返回当前有效观测派生值。
-- **t074 观测扩展**：迁移 `0010`（revision `8c3f1d0a7b92`，`down_revision=796adb0bf159`，只进不退）为 `proxy_egress_observations` 增 `country_name` / `city` / `latency_ms`；`EgressObservation`、`EgressProbeResult`、Supervisor `EgressProbeResponse` 与 `ProxyResponse` 统一暴露 `observation_status`（`unknown` / `pending` / `ok` / `failed`）、`latency_ms`、`egress_ip`、`country_code`、`country_name`、`city`、`observation_error_code`（脱敏）、`observed_at`、`expires_at`。`latency_ms` 只由 `shared/egress.py` 内 `time.monotonic()` 包裹经代理的一次成功 HTTP 往返，不含 client 构造、多次回显尝试与网络策略生命周期；进程内探测不建毁容器，失败以脱敏 `observation_error_code` 落 `failed` 观测，不再有 helper 崩溃 / 非法输出分支。主链为 IP 回显 + 本地 `GeoLite2-City.mmdb` 完整读取 `country.names` / `city.names`；在线只读 HTTPS Geo 服务（`GEO_SERVICE_URLS` 白名单）仅作可选城市补充，处理 307 / 429 / TLS 失败并回落，绝不伪造位置（d048 / d049）。端点 / 凭据变更或 TTL 过期时旧位置与延迟立即失效。
+- **t074 观测扩展**：迁移 `0010`（revision `8c3f1d0a7b92`，`down_revision=796adb0bf159`，只进不退）为 `proxy_egress_observations` 增 `country_name` / `city` / `latency_ms`；`EgressObservation`、`EgressProbeResult`、Supervisor `EgressProbeResponse` 与 `ProxyResponse` 统一暴露 `observation_status`（`unknown` / `pending` / `ok` / `failed`）、`latency_ms`、`egress_ip`、`country_code`、`country_name`、`city`、`observation_error_code`（脱敏）、`observed_at`。`latency_ms` 只由 `shared/egress.py` 内 `time.monotonic()` 包裹经代理的一次成功 HTTP 往返，不含 client 构造、多次回显尝试与网络策略生命周期；进程内探测不建毁容器，失败以脱敏 `observation_error_code` 落 `failed` 观测，不再有 helper 崩溃 / 非法输出分支。主链为 IP 回显 + 本地 `GeoLite2-City.mmdb` 完整读取 `country.names` / `city.names`；在线只读 HTTPS Geo 服务（`GEO_SERVICE_URLS` 白名单）仅作可选城市补充，处理 307 / 429 / TLS 失败并回落，绝不伪造位置（d048 / d049）。t105 删除 `expires_at` 字段与 TTL：端点 / 凭据变更时旧位置与延迟立即失效，否则一直有效。
 
 ## 8. 密码变更影响集、幂等与引用事件（t056）
 

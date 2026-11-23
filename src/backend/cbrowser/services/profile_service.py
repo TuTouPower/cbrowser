@@ -22,10 +22,7 @@ from cbrowser.adapters.database.repository import (
     MissingExtensionReferenceError,
     ProfileRepository,
 )
-from cbrowser.domain.egress_observation import (
-    OBSERVATION_TTL_SECONDS,
-    EgressObservation,
-)
+from cbrowser.domain.egress_observation import EgressObservation
 from cbrowser.domain.models import (
     CandidateEntry,
     CollectionPage,
@@ -2005,8 +2002,6 @@ class ProfileService:
                         latency_ms=result.latency_ms,
                         status="ok",
                         observed_at=completed_at,
-                        expires_at=completed_at
-                        + datetime.timedelta(seconds=OBSERVATION_TTL_SECONDS),
                     ),
                 )
         return await self._repo.get_proxy(proxy_id)
@@ -2291,8 +2286,6 @@ class ProfileService:
                 source=getattr(result, "source", "local_geoip"),
                 status="ok",
                 observed_at=completed_at,
-                expires_at=completed_at
-                + datetime.timedelta(seconds=OBSERVATION_TTL_SECONDS),
             ),
         )
         return "ok", None

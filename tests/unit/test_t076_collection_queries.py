@@ -23,10 +23,7 @@ from cbrowser.adapters.database.models import (
     ProxyModel,
 )
 from cbrowser.adapters.database.repository import ProfileRepository
-from cbrowser.domain.egress_observation import (
-    OBSERVATION_TTL_SECONDS,
-    EgressObservation,
-)
+from cbrowser.domain.egress_observation import EgressObservation
 from cbrowser.domain.models import ProfileConfig
 from cbrowser.domain.proxy_endpoint import ProxyEndpoint
 
@@ -409,7 +406,6 @@ async def test_proxy_country_ranges_from_observations(repo):
                 country_code=country_code,
                 city=city,
                 observed_at=now,
-                expires_at=now + timedelta(seconds=OBSERVATION_TTL_SECONDS),
             ),
         )
     ranges = await repo.proxy_country_ranges()
@@ -451,7 +447,6 @@ async def test_proxies_collection_page_country_filter(repo):
                 egress_ip="203.0.113.9",
                 country_code=code,
                 observed_at=NOW,
-                expires_at=NOW + timedelta(seconds=OBSERVATION_TTL_SECONDS),
             ),
         )
     page = await repo.list_proxies_page(country_code="JP", page=1, page_size=50)
@@ -587,44 +582,48 @@ async def test_scale_matrix_1000(repo, db_context):
 
 
 @pytest.mark.asyncio
-async def test_proxy_country_ranges_exclude_expired_ok_observations(repo):
-    """AC-006 (t076 review f004): country ranges use the same "latest
-    and still valid" rows as the collection filter — a country whose
-    latest ok observation expired must not offer a dead option that
-    filters to zero rows."""
-    stale = await _make_proxy(repo, "px-stale", host="stale.example.com")
-    fresh = await _make_proxy(repo, "px-fresh", host="fresh.example.com")
+async def test_proxy_country_ranges_match_collection_current_observation(repo):
+    """t105 AC-004: country ranges and the collection filter both use the
+    newest observation row.  An old ok row stays valid forever; a newer
+    pending row hides the older geography in both paths."""
+    old_ok = await _make_proxy(repo, "px-old-ok", host="old.example.com")
+    fresh_ok = await _make_proxy(repo, "px-fresh-ok", host="fresh.example.com")
+    pending = await _make_proxy(repo, "px-pending", host="pending.example.com")
 
-    def _obs(proxy, country_code, city, observed_at, expires_at):
+    def _obs(proxy, country_code, city, observed_at, status="ok"):
         return EgressObservation(
             proxy_id=proxy.id,
             endpoint_fingerprint=ProxyEndpoint(
                 scheme="http", host=proxy.host, port=proxy.port, username="user"
             ).fingerprint,
             credential_revision=proxy.credential_revision,
-            status="ok",
-            egress_ip="203.0.113.9",
+            status=status,
+            egress_ip=None if status != "ok" else "203.0.113.9",
             country_code=country_code,
             city=city,
             observed_at=observed_at,
-            expires_at=expires_at,
         )
 
     await repo.record_egress_observation(
-        stale.id,
-        _obs(stale, "JP", "Tokyo", NOW - timedelta(hours=2), NOW - timedelta(hours=1)),
+        old_ok.id, _obs(old_ok, "JP", "Tokyo", NOW - timedelta(days=2))
     )
     await repo.record_egress_observation(
-        fresh.id,
-        _obs(fresh, "JP", "Osaka", NOW, NOW + timedelta(seconds=OBSERVATION_TTL_SECONDS)),
+        fresh_ok.id, _obs(fresh_ok, "JP", "Osaka", NOW)
     )
+    await repo.record_egress_observation(
+        pending.id, _obs(pending, "JP", "Kyoto", NOW - timedelta(hours=1))
+    )
+    await repo.record_egress_observation(
+        pending.id, _obs(pending, None, None, NOW, status="pending")
+    )
+
     ranges = await repo.proxy_country_ranges()
     by_code = {r.country_code: r for r in ranges}
-    assert by_code["JP"].cities == ["Osaka"]
-    # The filter side agrees: only the fresh proxy matches JP.
+    assert by_code["JP"].cities == ["Osaka", "Tokyo"]
+
     page = await repo.list_proxies_page(country_code="JP", page=1, page_size=50)
-    assert page.total == 1
-    assert page.items[0].id == fresh.id
+    assert page.total == 2
+    assert {item.id for item in page.items} == {old_ok.id, fresh_ok.id}
 
 
 @pytest.mark.asyncio

@@ -11,9 +11,6 @@ from __future__ import annotations
 import datetime
 from dataclasses import dataclass
 
-#: How long an ``ok`` observation stays current (AC-007).
-OBSERVATION_TTL_SECONDS = 24 * 3600
-
 OBSERVATION_PERSPECTIVE = "browser"
 
 
@@ -36,26 +33,22 @@ class EgressObservation:
     status: str = "ok"  # pending | ok | failed
     error_code: str | None = None
     observed_at: datetime.datetime | None = None
-    expires_at: datetime.datetime | None = None
 
 
 def observation_is_current(
     obs: EgressObservation,
     endpoint_fingerprint: str,
     credential_revision: int,
-    now: datetime.datetime,
 ) -> bool:
-    """An observation is current only while it is ``ok``, matches the
-    proxy's present endpoint fingerprint *and* credential revision, carries
-    both an egress IP and a country, and has not expired (AC-007)."""
-    if obs.status != "ok":
-        return False
+    """An observation is current while it belongs to the proxy's present
+    endpoint identity.  An ``ok`` row additionally needs an egress IP and
+    country.  Observations are point-in-time snapshots with no expiry: a
+    result stays current until a newer observation supersedes it or the
+    endpoint / credentials change (t105)."""
     if obs.endpoint_fingerprint != endpoint_fingerprint:
         return False
     if obs.credential_revision != credential_revision:
         return False
-    if not obs.egress_ip or not obs.country_code:
-        return False
-    if obs.expires_at is not None and now >= obs.expires_at:
+    if obs.status == "ok" and (not obs.egress_ip or not obs.country_code):
         return False
     return True

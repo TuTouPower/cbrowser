@@ -33,7 +33,7 @@ from tests.unit.test_t104_extensions_manifest import (
 )
 
 REVISION_0016 = "a10300160001"
-REVISION_HEAD = "e10400170001"
+REVISION_HEAD = "b2c3d4e5f601"
 
 
 def _insert_0016_profile(

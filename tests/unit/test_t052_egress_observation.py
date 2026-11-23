@@ -49,37 +49,43 @@ def _obs(**overrides):
         status="ok",
         error_code=None,
         observed_at=_utc(2026, 11, 11, 10, 0, 0),
-        expires_at=_utc(2026, 11, 12, 10, 0, 0),
     )
     base.update(overrides)
     return EgressObservation(**base)
 
 
-def test_observation_current_when_matching_and_fresh():
+def test_observation_current_when_endpoint_matches():
+    assert observation_is_current(_obs(), "fp", 3)
+
+
+def test_observation_stays_current_across_any_point_in_time():
+    """t105: observations are snapshots without an expiry timestamp."""
     assert observation_is_current(
-        _obs(), "fp", 3, _utc(2026, 11, 11, 12, 0, 0)
+        _obs(observed_at=_utc(2020, 1, 1)), "fp", 3
     )
 
 
 @pytest.mark.parametrize(
-    "overrides,fingerprint,revision,now",
+    "overrides,fingerprint,revision",
     [
-        ({"status": "failed"}, "fp", 3, _utc(2026, 11, 11, 12, 0, 0)),
-        ({"status": "pending"}, "fp", 3, _utc(2026, 11, 11, 12, 0, 0)),
-        ({"endpoint_fingerprint": "other"}, "fp", 3, _utc(2026, 11, 11, 12, 0, 0)),
-        ({"credential_revision": 4}, "fp", 3, _utc(2026, 11, 11, 12, 0, 0)),
-        ({"country_code": None}, "fp", 3, _utc(2026, 11, 11, 12, 0, 0)),
-        ({"egress_ip": None}, "fp", 3, _utc(2026, 11, 11, 12, 0, 0)),
-        ({}, "fp", 3, _utc(2026, 11, 12, 10, 0, 1)),  # expired
+        ({"endpoint_fingerprint": "other"}, "fp", 3),
+        ({"credential_revision": 4}, "fp", 3),
+        ({"country_code": None}, "fp", 3),
+        ({"egress_ip": None}, "fp", 3),
     ],
 )
-def test_observation_not_current(overrides, fingerprint, revision, now):
-    assert not observation_is_current(_obs(**overrides), fingerprint, revision, now)
+def test_observation_not_current(overrides, fingerprint, revision):
+    assert not observation_is_current(
+        _obs(**overrides), fingerprint, revision
+    )
 
 
-def test_observation_without_expiry_never_expires():
+@pytest.mark.parametrize("status", ["failed", "pending"])
+def test_non_ok_status_is_current_when_endpoint_matches(status):
+    """t105: every status shares the same endpoint-identity invalidation
+    rule; failed / pending rows carry no geography but remain visible."""
     assert observation_is_current(
-        _obs(expires_at=None), "fp", 3, _utc(2027, 1, 1)
+        _obs(status=status, egress_ip=None, country_code=None), "fp", 3
     )
 
 

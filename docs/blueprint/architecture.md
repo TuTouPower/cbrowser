@@ -214,6 +214,8 @@ API 通过 `ExtensionCatalogService`（`services/extension_catalog.py`）与中�
 
 - **冻结作用域与单一状态源**：作业作用于提交时解析出的过滤后目标 ID 集合，分页只影响视图、不参与作用域；行状态只由观测表的 `observation_status === "pending"` 表达，批量进度只由作业读模型与 SSE 表达，前端不持有并行进度状态。观测表 `proxy_egress_observations` 仍是逐项结果唯一存储，重复提交、自动探测与迟到结果不得覆盖在途作业归属，卡住的 pending 按预算收敛为终态；页面刷新由读模型恢复进度，API 进程重启按显式规则恢复或终结并暴露失败。
 
+- **观测快照无时效（t105 / ADR 042）**：`proxy_egress_observations` 只追加结果行，不存 `expires_at`；当前观测由「最新一行 + 端点指纹与凭据版本匹配当前端点」决定，`ok` 另需出口 IP 与国家码，`ok` / `failed` / `pending` 统一适用。出口地理与测速延迟同属一条快照、同生共死；collection 与 countries 读模型不按时间过滤，不引入周期巡检或唤醒调度。
+
 - **轻量探测取代沙箱**：探测在 API 进程内执行（`services/egress_probe.py` + `shared/egress.py`），凭证由服务端从已存端点装载、不进命令行，显式 `proxy=` 且 `trust_env=False` 杜绝直连回退，回显目标限于固定白名单且私有/保留/回环地址拒绝，出口 IP / 城市取自身回显与本地 GeoIP，`latency_ms` 只计一次成功 HTTP 往返。不再创建 helper 容器、专用 bridge 或探测专属 Policy Agent，也不产生任何 Docker 网络 / 策略资源事件。`proxy_enforced=True` 双栈 `OUTPUT -j DROP` 只约束配置代理的 Browser/Stream 运行策略（ADR 038），与探测路径独立；探针只提供测速与出口信息展示，隔离 / 防泄露验证由单元与真实 Docker E2E 承担（见 [testing](testing.md)）。
 
 - **GeoIP 依赖显式注入（t096）**：`InProcessEgressProbeRunner` 在构造时必须注入 `GeoIpLookup`，探测 I/O 不再隐式读取 `CBROWSER_GEOIP_DB` / `CBROWSER_GEOIP_CACHE`。唯一配置解析点是 API 组合根（`api/app.py` 调 `shared/egress.resolve_geoip_db_path()` 一次），结果经 `RuntimeCoordinator(geoip_db_path=...)` → `egress_probe_runner()` 注入 runner。未配置路径时 `GeoIpLookup` 持空路径并判 `geoip_db_missing` 资源类失败，不在探测期崩溃或回退到环境变量；compose 按「谁用谁配」分别给 api 与 supervisor 声明 GeoIP 缓存路径，指向同一物理 mmdb。

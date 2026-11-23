@@ -69,7 +69,7 @@ class ProxyEgressObservationModel(Base):
 
     ``country_code`` is an observation, not a configuration: a row is only
     current while its endpoint fingerprint and credential revision still
-    match the proxy and it has not expired (see
+    match the proxy (see
     ``cbrowser.domain.egress_observation.observation_is_current``).  Old
     rows are kept as history; validity is computed, never mutated in place
     except by inserting a newer row.
@@ -95,7 +95,6 @@ class ProxyEgressObservationModel(Base):
     status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     observed_at: Mapped[str] = mapped_column(String(64), nullable=False)
-    expires_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[str] = mapped_column(
         String(64), default=utc_now_iso, nullable=False
     )

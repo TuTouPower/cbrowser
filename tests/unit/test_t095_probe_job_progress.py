@@ -103,8 +103,8 @@ async def test_progress_is_read_model_authority_without_observations(repo, tmp_p
 
 
 @pytest.mark.asyncio
-async def test_observation_history_kept_with_ttl(repo, tmp_path):
-    """观测表只存单次结果：多行历史保留、TTL 字段随行写入（AC-004）。"""
+async def test_observation_history_kept_without_expiry(repo, tmp_path):
+    """观测表只存单次结果：多行历史永久保留，无 TTL 字段（t105 AC-004）。"""
     created = await repo.create_proxy({
         "name": "obs-proxy",
         "scheme": "http",
@@ -123,12 +123,11 @@ async def test_observation_history_kept_with_ttl(repo, tmp_path):
                 credential_revision=1,
                 status="ok",
                 observed_at=now + datetime.timedelta(seconds=i),
-                expires_at=now + datetime.timedelta(seconds=i + 60),
             ),
         )
     history = await repo.get_egress_observations(proxy_id)
     assert len(history) == 3
-    assert all(item.expires_at is not None for item in history)
+    assert all(item.observed_at is not None for item in history)
 
 
 @pytest.mark.asyncio

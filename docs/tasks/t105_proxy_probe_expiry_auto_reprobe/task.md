@@ -32,12 +32,12 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：`OBSERVATION_TTL_SECONDS` 常量与 `expires_at` 字段从 `domain/egress_observation.py`、`domain/models.py`、`adapters/database/models.py`、`adapters/database/repository.py`、迁移 0018 之后的 ORM/API 路径、`schemas/openapi/*.json`、`src/frontend/src/shared/api/generated/cbrowser_v1.d.ts` 及前端手写类型中全部移除；全仓代码（历史迁移文件除外）grep 无残留。
-- [ ] AC-002：任意一条成功观测写入后，在任意时间点（含注入时钟跨越原 24h 边界、API 进程重启后）仍是该代理当前观测；列表状态列、卡片视图、编辑弹窗只读观测区、会话详情持续展示同一 `latency_ms` 与国家/城市，直到端点/凭据变化或被新观测覆盖。
-- [ ] AC-003：端点或凭据变化后，最新快照因指纹/凭据版本失配而失效，触发既有 pending → 探测 → 新快照流程；新快照成为当前观测，旧观测仅留在历史中且不再展示。`ok` / `failed` / `pending` 三类快照统一适用该失效规则，不存在某一类永久可见或永久失效。
-- [ ] AC-004：`GET /api/v1/proxies/collection` 与 `GET /api/v1/proxies/countries` 均不按时间过滤观测；列表行展示与筛选范围的当前观测口径一致，在任意时间点返回同一代理的同一组国家/城市与延迟值。
-- [ ] AC-005：迁移 0018 在含历史观测的现有库上删除 `expires_at` 列后，其余观测历史行数与字段值不变，应用启动与读取正常；downgrade 仍按只进不退拒绝。
-- [ ] AC-006：手动单条/批量测速、服务端作业读模型与 SSE `probe_job_progress` 语义不变，t094/t095 相关测试回归通过。
+- [x] AC-001：`OBSERVATION_TTL_SECONDS` 常量与 `expires_at` 字段从 `domain/egress_observation.py`、`domain/models.py`、`adapters/database/models.py`、`adapters/database/repository.py`、迁移 0018 之后的 ORM/API 路径、`schemas/openapi/*.json`、`src/frontend/src/shared/api/generated/cbrowser_v1.d.ts` 及前端手写类型中全部移除；全仓代码（历史迁移文件除外）grep 无残留。
+- [x] AC-002：任意一条成功观测写入后，在任意时间点（含注入时钟跨越原 24h 边界、API 进程重启后）仍是该代理当前观测；列表状态列、卡片视图、编辑弹窗只读观测区、会话详情持续展示同一 `latency_ms` 与国家/城市，直到端点/凭据变化或被新观测覆盖。
+- [x] AC-003：端点或凭据变化后，最新快照因指纹/凭据版本失配而失效，触发既有 pending → 探测 → 新快照流程；新快照成为当前观测，旧观测仅留在历史中且不再展示。`ok` / `failed` / `pending` 三类快照统一适用该失效规则，不存在某一类永久可见或永久失效。
+- [x] AC-004：`GET /api/v1/proxies/collection` 与 `GET /api/v1/proxies/countries` 均不按时间过滤观测；列表行展示与筛选范围的当前观测口径一致，在任意时间点返回同一代理的同一组国家/城市与延迟值。
+- [x] AC-005：迁移 0018 在含历史观测的现有库上删除 `expires_at` 列后，其余观测历史行数与字段值不变，应用启动与读取正常；downgrade 仍按只进不退拒绝。
+- [x] AC-006：手动单条/批量测速、服务端作业读模型与 SSE `probe_job_progress` 语义不变，t094/t095 相关测试回归通过。
 
 ### 可测试性声明
 

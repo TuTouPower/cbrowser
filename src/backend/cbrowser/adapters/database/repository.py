@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 
 from cbrowser.adapters.database.models import (
@@ -1887,9 +1887,6 @@ class ProfileRepository:
             observed_at=observation.observed_at.isoformat()
             if observation and observation.observed_at
             else None,
-            expires_at=observation.expires_at.isoformat()
-            if observation and observation.expires_at
-            else None,
             region_label=m.region_label,
             notes=m.notes,
             used_by_count=used_by_count,
@@ -1916,18 +1913,16 @@ class ProfileRepository:
             status=m.status,  # type: ignore[arg-type]
             error_code=m.error_code,
             observed_at=_parse(m.observed_at),
-            expires_at=_parse(m.expires_at),
         )
 
     @staticmethod
     def _visible_observation(
-        obs: EgressObservation, proxy: ProxyModel, now: datetime.datetime
+        obs: EgressObservation, proxy: ProxyModel
     ) -> EgressObservation | None:
-        """Apply the currency rule to one row: a pending/failed row is
-        still surfaced (its status drives the UI "detecting"/"unknown"
-        states); only a stale *ok* row is hidden (AC-007)."""
-        if obs.status != "ok":
-            return obs
+        """Apply the endpoint-identity rule to one row: every status is
+        surfaced only while it belongs to the proxy's present endpoint and
+        credential revision.  An ``ok`` row without egress IP / country is
+        invalid; pending and failed rows carry no geography (t105)."""
         endpoint = ProxyEndpoint(
             scheme=proxy.scheme,  # type: ignore[arg-type]
             host=proxy.host,
@@ -1935,7 +1930,7 @@ class ProfileRepository:
             username=proxy.username,
         )
         if observation_is_current(
-            obs, endpoint.fingerprint, proxy.credential_revision, now
+            obs, endpoint.fingerprint, proxy.credential_revision
         ):
             return obs
         return None
@@ -1943,9 +1938,9 @@ class ProfileRepository:
     async def _current_observation(
         self, session: AsyncSession, proxy: ProxyModel
     ) -> EgressObservation | None:
-        """Latest observation row, but only when it is still current for
-        the proxy's present endpoint fingerprint and credential revision
-        (AC-007: endpoint/credential change or expiry invalidates it)."""
+        """Latest observation row, but only when it belongs to the proxy's
+        present endpoint fingerprint and credential revision (endpoint /
+        credential change invalidates it; observations do not expire)."""
         stmt = (
             select(ProxyEgressObservationModel)
             .where(ProxyEgressObservationModel.proxy_id == proxy.id)
@@ -1959,7 +1954,7 @@ class ProfileRepository:
         if row is None:
             return None
         obs = self._observation_to_domain(row)
-        return self._visible_observation(obs, proxy, datetime.now(timezone.utc))
+        return self._visible_observation(obs, proxy)
 
     async def _current_observations(
         self, session: AsyncSession, models: list[ProxyModel]
@@ -2004,12 +1999,11 @@ class ProfileRepository:
             )
         )
         rows = (await session.execute(stmt)).scalars().all()
-        now = datetime.now(timezone.utc)
         by_id = {m.id: m for m in models}
         for row in rows:
             obs = self._observation_to_domain(row)
             result[row.proxy_id] = self._visible_observation(
-                obs, by_id[row.proxy_id], now
+                obs, by_id[row.proxy_id]
             )
         return result
 
@@ -2219,18 +2213,18 @@ class ProfileRepository:
             )
 
     def _latest_observation_geo_subquery(self):
-        """Latest non-expired observation geo per proxy (t076 AC-006).
+        """Latest observation geo per proxy (t076, t105).
 
-        Same recency order as ``_current_observations``; an expired ok
-        row does not define the proxy's country.  The fingerprint /
-        revision match that ``_visible_observation`` applies to the
-        displayed value is not re-checked here: the filter narrows by
-        the latest recorded egress geography, the page item still shows
-        the authoritative (possibly unknown) observation.
+        Same recency order as ``_current_observations``.  Ranking all rows
+        (not just rows with geography) keeps this in step with the list:
+        a newer pending / failed row hides an older ok row's country until
+        the next successful observation.  Observations never expire, so
+        no time filter applies.
         """
         ranked = (
             select(
                 ProxyEgressObservationModel.proxy_id,
+                ProxyEgressObservationModel.status,
                 ProxyEgressObservationModel.country_code,
                 ProxyEgressObservationModel.country_name,
                 ProxyEgressObservationModel.city,
@@ -2245,14 +2239,6 @@ class ProfileRepository:
                 )
                 .label("rn"),
             )
-            .where(
-                ProxyEgressObservationModel.country_code.is_not(None),
-                or_(
-                    ProxyEgressObservationModel.status != "ok",
-                    ProxyEgressObservationModel.expires_at.is_(None),
-                    ProxyEgressObservationModel.expires_at > utc_now_iso(),
-                ),
-            )
             .subquery()
         )
         return (
@@ -2262,7 +2248,11 @@ class ProfileRepository:
                 ranked.c.country_name,
                 ranked.c.city,
             )
-            .where(ranked.c.rn == 1)
+            .where(
+                ranked.c.rn == 1,
+                ranked.c.status == "ok",
+                ranked.c.country_code.is_not(None),
+            )
             .subquery()
         )
 
@@ -2382,11 +2372,11 @@ class ProfileRepository:
     async def proxy_country_ranges(self) -> list[ProxyCountryRange]:
         """Country -> sorted city ranges from observations (t076 AC-006).
 
-        t076 review f004: aggregate over the same "latest and still
-        valid" rows the collection filter uses
-        (``_latest_observation_geo_subquery``), so a country whose
-        latest ok observation expired no longer offers a dead option
-        that filters to zero rows."""
+        t076 review f004 / t105: aggregate over the same current rows the
+        collection filter uses (``_latest_observation_geo_subquery``): the
+        newest row per proxy, which must be an ok observation with a country.
+        A newer non-ok row hides older geography in both paths, so no filter
+        ever offers a dead option that resolves to zero rows."""
         async with self._session_maker() as session:
             geo = self._latest_observation_geo_subquery()
             rows = (
@@ -2486,11 +2476,6 @@ class ProfileRepository:
                 observation.observed_at.isoformat()
                 if observation.observed_at
                 else now
-            ),
-            expires_at=(
-                observation.expires_at.isoformat()
-                if observation.expires_at
-                else None
             ),
             created_at=now,
         )

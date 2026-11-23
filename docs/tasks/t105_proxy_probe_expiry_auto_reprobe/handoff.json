@@ -1,0 +1,15 @@
+{
+  "tid": "t105",
+  "attempt": 2,
+  "execution_id": "827d73b366154448937113393987506a",
+  "status": "done",
+  "branch": "t105_proxy_probe_expiry_auto_reprobe",
+  "base_sha": "5715c0bddf5ae1097faf4ef0105f718cf23228f4",
+  "spec_source_sha": "5715c0bddf5ae1097faf4ef0105f718cf23228f4",
+  "tests": "全量 `scripts/run_gates.sh` 通过；contract 388、unit 2451、integration 225、design lint/check 通过、frontend 752 项通过、生产构建通过；新增迁移用例与改写后的 TTL 语义用例全部通过。",
+  "blackbox": "主分支镜像 + 密封缓存下 E2E 并行阶段 44 passed / 0 failed；serial 阶段本机多栈资源争用致偶发失败，单独重跑 9 个用例全过；针对本 bug 的真实 HTTP 黑盒（含进程重启模拟）通过。",
+  "review": "Round 1 code PASS（1 minor f001）/ test PASS（clean）；f001（docstring 遗留 TTL 措辞）已修。Round 2 重审 code PASS / test PASS，0 新 finding，`review-status overall=PASS / review_scope=ok / ac_review=ok`。6/6 AC 全部 TICK-VALID re_verified。",
+  "review_scope": "a35cbcf6290823ef",
+  "pending": [],
+  "findings": []
+}

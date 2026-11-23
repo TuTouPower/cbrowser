@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -18,10 +18,7 @@ from cbrowser.adapters.database.models import ProfileRuntimeModel
 from cbrowser.adapters.database.repository import ProfileRepository
 from cbrowser.adapters.database.session import create_engine_and_maker
 from cbrowser.api.app import create_app
-from cbrowser.domain.egress_observation import (
-    OBSERVATION_TTL_SECONDS,
-    EgressObservation,
-)
+from cbrowser.domain.egress_observation import EgressObservation
 from cbrowser.domain.models import ProfileConfig
 from cbrowser.domain.proxy_endpoint import ProxyEndpoint
 from fastapi.testclient import TestClient
@@ -86,7 +83,6 @@ def api_env(tmp_path: Path):
                 country_code="JP",
                 city="Tokyo",
                 observed_at=NOW,
-                expires_at=NOW + timedelta(seconds=OBSERVATION_TTL_SECONDS),
             ),
         )
         await engine.dispose()

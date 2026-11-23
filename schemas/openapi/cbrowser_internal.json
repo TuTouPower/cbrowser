@@ -11917,17 +11917,6 @@
             ],
             "title": "Observed At"
           },
-          "expires_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Expires At"
-          },
           "region_label": {
             "anyOf": [
               {
