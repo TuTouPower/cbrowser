@@ -101,6 +101,7 @@ def test_runtime_and_profile_responses_expose_positive_number():
     import pytest
 
     runtime = ProfileRuntimeResponse(
+        config_pending=False,
         profile_id="p1",
         display_number=4,
         desired_state="stopped",

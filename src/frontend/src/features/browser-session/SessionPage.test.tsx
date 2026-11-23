@@ -195,6 +195,7 @@ function runtime(
     desired_state: observed === "running" ? "running" : "stopped",
     runtime_instance_id: "inst-1",
     config_version: 1,
+    config_pending: false,
     state_revision: 1,
     last_started_at: "2026-01-01T00:00:00Z",
     last_stopped_at: null,
@@ -222,7 +223,11 @@ function makeStub(options: StubOptions = {}) {
   let observed: ProfileRuntimeResponse["observed_state"] =
     options.observed ?? "running";
   const configVersion = options.configVersion ?? 1;
-  const makeRuntime = (id: string) => runtime(id, observed, { config_version: configVersion });
+  const makeRuntime = (id: string) =>
+    runtime(id, observed, {
+      config_version: configVersion,
+      config_pending: configVersion > 1,
+    });
   const spies = {
     profiles: {
       list: vi.fn(async () => profiles),

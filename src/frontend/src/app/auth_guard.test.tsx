@@ -42,6 +42,7 @@ const RUNTIME: ProfileRuntimeResponse = {
   observed_state: "stopped",
   runtime_instance_id: null,
   config_version: 1,
+  config_pending: false,
   state_revision: 1,
   failure_count: 0,
   restart_blocked: false,

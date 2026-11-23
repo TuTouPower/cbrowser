@@ -7,12 +7,16 @@ export function EnvironmentCardGrid({
   onToggle,
   onAction,
   previewCapturedAtById,
+  onApplyConfig,
+  applyPendingId,
 }: {
   rows: EnvironmentRow[];
   selected: Set<string>;
   onToggle: (id: string, checked: boolean) => void;
   onAction: (action: EnvironmentAction, row: EnvironmentRow) => void;
   previewCapturedAtById?: Map<string, string | null>;
+  onApplyConfig: (id: string) => void;
+  applyPendingId?: string | null;
 }) {
   return (
     <div
@@ -29,6 +33,8 @@ export function EnvironmentCardGrid({
           previewCapturedAt={
             previewCapturedAtById?.get(row.profile.id) ?? null
           }
+          onApplyConfig={onApplyConfig}
+          applyPending={applyPendingId === row.profile.id}
         />
       ))}
     </div>

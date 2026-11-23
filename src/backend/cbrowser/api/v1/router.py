@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Annotated
+from typing import Annotated, Any
 
 from cbrowser.domain.models import AuthenticatedSession
 from cbrowser.domain.profile_locale import default_include_cjk_fonts
@@ -26,6 +26,7 @@ from cbrowser.api.v1.control_router import (
 from cbrowser.api.v1.runtime_views import (
     fence_search_defaults,
     fence_transport,
+    make_runtime_event_data,
     make_runtime_response,
     resolve_operation_id,
 )
@@ -77,6 +78,15 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, s
 from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger("cbrowser.api.v1.router")
+
+
+async def runtime_view(
+    service: ProfileService, profile_id: str, rt: Any, coordinator: Any
+) -> ProfileRuntimeResponse:
+    profile = await service.get_profile(profile_id)
+    return await make_runtime_response(
+        rt, coordinator, current_config_version=profile.current_config_version
+    )
 
 
 async def _apply_preview_policy(
@@ -211,24 +221,13 @@ async def subscribe_runtime_events(
                     except Exception:  # noqa: BLE001 - snapshot stays usable
                         control = None
                 snapshots.append(
-                    ProfileRuntimeEventData(
-                        profile_id=rt.profile_id,
-                        desired_state=rt.desired_state,
-                        observed_state=rt.observed_state,
-                        runtime_instance_id=rt.runtime_instance_id,
-                        config_version=rt.config_version,
-                        state_revision=rt.state_revision,
-                        failure_count=rt.failure_count,
-                        restart_blocked=rt.restart_blocked,
-                        last_started_at=rt.last_started_at,
-                        last_stopped_at=rt.last_stopped_at,
-                        browser_product=rt.browser_product,
-                        browser_user_agent=rt.browser_user_agent,
+                    make_runtime_event_data(
+                        rt,
+                        p.current_config_version,
                         last_coordinator_error=last_err,
                         search_defaults=search_defaults,
                         transport=transport,
                         control=control,
-                        updated_at=rt.updated_at,
                     )
                 )
             except Exception as exc:  # noqa: BLE001 - single profile failure must not abort initial SSE snapshot
@@ -910,7 +909,7 @@ async def get_profile_runtime(
         # only.  Transport/search-defaults refresh happens in the
         # coordinator's bounded background loop, never synchronously
         # on a GET (no downstream RPC, font hashing or Docker work).
-        return await make_runtime_response(rt, coord)
+        return await runtime_view(service, profile_id, rt, coord)
     except ProfileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -961,7 +960,7 @@ async def retry_profile_search_defaults(
             profile_id, request_id=idempotency_key or None
         )
         rt = await service.get_runtime(profile_id)
-        return await make_runtime_response(rt, coord)
+        return await runtime_view(service, profile_id, rt, coord)
     except ProfileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1019,7 +1018,7 @@ async def set_desired_state(
         if coord:
             coord.publish_profile_change_later(profile_id)
             coord.trigger_reconcile(profile_id)
-        return await make_runtime_response(rt, coord)
+        return await runtime_view(service, profile_id, rt, coord)
     except ProfileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1060,7 +1059,7 @@ async def stop_profile(
         if coord:
             coord.publish_profile_change_later(profile_id)
             coord.trigger_reconcile(profile_id)
-        return await make_runtime_response(rt, coord)
+        return await runtime_view(service, profile_id, rt, coord)
     except ProfileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1093,7 +1092,7 @@ async def bind_runtime(
             await control_service.note_runtime_started(
                 profile_id, "profile_restart"
             )
-        return await make_runtime_response(rt, coord)
+        return await runtime_view(service, profile_id, rt, coord)
     except ProfileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1137,7 +1136,7 @@ async def report_observed_state(
             # Crash observation releases the instance: control returns
             # to the user immediately, not at the next bind.
             await control_service.note_runtime_started(profile_id, "crash")
-        return await make_runtime_response(rt, coord)
+        return await runtime_view(service, profile_id, rt, coord)
     except ProfileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

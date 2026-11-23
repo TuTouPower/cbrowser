@@ -11,6 +11,7 @@ from cbrowser.domain.models import ProfileRuntimeStatusEvent
 
 def _event(profile_id: str) -> ProfileRuntimeStatusEvent:
     return ProfileRuntimeStatusEvent(
+        config_pending=False,
         profile_id=profile_id,
         desired_state="running",
         observed_state="running",

@@ -1,21 +1,16 @@
 import { Link } from "react-router";
 import { useI18n } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";
-import { Banner, Button, EmptyState, StatusBadge } from "../../shared/ui";
-import { useAllProfilesCollectionQuery } from "../profiles/useProfilesQuery";
+import { Banner, Button, ConfigPendingNotice, EmptyState, StatusBadge } from "../../shared/ui";
+import {
+  useAllProfilesCollectionQuery,
+  useApplyConfigRestart,
+} from "../profiles/useProfilesQuery";
 import { SESS_ENTRY_LINK, SESS_ENTRY_LIST, SESS_ENTRY_PAGE } from "./session_keys";
 
 export function SessionEntryPage() {
   const { t } = useI18n();
   const client = useApiClient();
-  // t076 review f006: the entry page reads the bounded collection
-  // page (server-filtered to running) instead of the whole profile
-  // table; the running check below keeps the exact "running, not
-  // starting" semantics against the batched summary.
-  // t076 review f008: the status is the exact running state (the
-  // "running" bucket also holds starting rows, which could crowd
-  // truly-running rows out of one page), and every page is walked —
-  // one 100-row page can never stand in for all running rows.
   const profilesQuery = useAllProfilesCollectionQuery(
     { status: "running_exact", page_size: 100 },
     client,
@@ -25,10 +20,8 @@ export function SessionEntryPage() {
   const profilesError = profilesQuery.isError
     ? (profilesQuery.error?.message ?? t("runtimeStateUnknown"))
     : null;
+  const apply = useApplyConfigRestart(client);
 
-  // t098: each collection row carries its runtime projection, so the
-  // exact "running, not starting" check reads the row itself — no
-  // second read, and a row without a runtime fact is not running.
   const running = profiles.filter(
     (profile) => profile.runtime?.observed_state === "running",
   );
@@ -37,8 +30,6 @@ export function SessionEntryPage() {
     if (profilesQuery.isError) void profilesQuery.refetch();
   };
 
-  // P2: profiles 失败才整页错误；单个 runtime 失败只顶栏提示，不阻塞
-  // 其它运行中环境的列表（避免过度整页错误）。
   const blockingError = profilesError;
 
   return (
@@ -67,15 +58,26 @@ export function SessionEntryPage() {
           ) : (
             <ul data-testid={SESS_ENTRY_LIST} className="flex flex-col gap-sm">
               {running.map((profile) => (
-                <li key={profile.id}>
+                <li
+                  key={profile.id}
+                  className="flex flex-wrap items-center justify-between gap-md rounded-md border border-outline bg-surface px-md py-sm"
+                >
                   <Link
                     data-testid={SESS_ENTRY_LINK}
                     to={`/session/${encodeURIComponent(profile.id)}`}
-                    className="flex items-center justify-between gap-md rounded-md border border-outline bg-surface px-md py-sm font-ui text-body-md text-on-surface hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                    className="flex flex-1 items-center justify-between gap-md font-ui text-body-md text-on-surface hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
                   >
                     <span className="truncate">{profile.name}</span>
                     <StatusBadge tone="running" label={t("statusRunning")} />
                   </Link>
+                  <ConfigPendingNotice
+                    pending={Boolean(profile.runtime?.config_pending)}
+                    isPending={apply.scope(profile.id).isPending}
+                    variant="inline"
+                    testId={`sess-entry-config-pending-${profile.id}`}
+                    applyTestId={`sess-entry-config-apply-${profile.id}`}
+                    onApply={() => apply.apply(profile.id)}
+                  />
                 </li>
               ))}
             </ul>

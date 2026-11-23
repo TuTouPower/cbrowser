@@ -1,7 +1,7 @@
 ---
 slug: profile_management
 status: active
-tasks: [baseline, t075, t076, t077, t078, t079, t090, t094, t095, t098, t099, t101, t103, t104]
+tasks: [baseline, t075, t076, t077, t078, t079, t090, t094, t095, t098, t099, t101, t103, t104, t106]
 ---
 # 需求规范：Profile 管理与外部标签页
 
@@ -88,6 +88,7 @@ tasks: [baseline, t075, t076, t077, t078, t079, t090, t094, t095, t098, t099, t1
 - 代理：CRUD 可用，协议/host/端口按规则校验、名称唯一；响应含 `has_password` 与 `used_by_count`，`password` 不出现在代理/Profile/配置版本/错误响应/SSE/日志，也不进配置版本快照。PATCH `password` 三态：缺失=不变、null=清除、字符串=设置（同时递增 `credential_revision`）。
 - 代理被任一 Profile 的当前配置或 runtime 绑定版本引用时，删除返回 409 `proxy_in_use` 并附引用数量，代理与引用关系不变。
 - 配置版本三分：只改元数据、只改 `capture_preview`、或提交与当前值相同的运行配置都不生成新版本，运行中 Profile 不出现待应用；修改代理连接字段时在同一事务内为每个引用 Profile 生成新版本并广播 SSE；只改代理名称/地区/备注不生成。
+- 待应用状态是领域派生事实（`config_pending`），由后端在 collection 行的 runtime 投影、runtime 响应与 SSE 事件中一致交付：runtime 存在且非停止态、当前配置版本高于运行绑定版本时为真；前端任何界面只读该事实，不比较版本。环境管理列表（表格与卡片）、工作台入口与会话页统一呈现，并在列表行内提供「应用并重启」命令（`useApplyConfigRestart`），该命令是 stop + 以新版本启动的唯一封装并按 Profile 隔离动作状态（t106）。
 - 带认证 SOCKS5 按 spike `s013` 结论处理：Chromium 146 支持时端到端经代理出站；代理密码在 Profile 绑定版本之后被修改时，按旧版本重启失败封闭并报告 `proxy_credentials_changed`，应用新版本后启动成功。
 - runtime 响应与 SSE 携带 `last_started_at` / `last_stopped_at` / `browser_product` / `browser_user_agent`；前端校验拒绝非法时间值。运行中 Profile 的浏览器版本字段与容器内 CDP `Browser.getVersion` 一致，未运行时为 null。
 - 运行态或仍绑定实例的 Profile 删除返回 409 `profile_running`；error 且无实例可删除，删除成功后 DB 行、Artifact 与全部 Profile 专属目录都不存在。

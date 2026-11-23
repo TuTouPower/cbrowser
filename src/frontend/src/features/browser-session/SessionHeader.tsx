@@ -15,8 +15,8 @@ import type {
   ProfileRuntimeResponse,
 } from "../../shared/api/types";
 import {
-  Banner,
   Button,
+  ConfigPendingNotice,
   IconButton,
   StatusBadge,
   type StatusTone,
@@ -110,10 +110,6 @@ export function SessionHeader(props: SessionHeaderProps): JSX.Element {
   const { t } = useI18n();
   const observed = observedStatus(runtime?.observed_state, t);
   const transportState = runtime?.transport?.transport_state;
-  const applyPending = Boolean(
-    runtime && runtime.config_version !== profile.current_config_version,
-  );
-
   return (
     <header
       data-testid={SESS_HEADER}
@@ -136,21 +132,13 @@ export function SessionHeader(props: SessionHeaderProps): JSX.Element {
         />
       </div>
 
-      {applyPending && (
-        <Banner tone="warning" testId={APPLY_PENDING_ID}>
-          <span className="font-ui text-body-sm text-on-surface">
-            {t("sessApplyPending")}
-          </span>
-          <Button
-            size="sm"
-            data-testid={SESS_APPLY_RESTART}
-            disabled={isPending}
-            onClick={onApplyRestart}
-          >
-            {t("sessApplyRestart")}
-          </Button>
-        </Banner>
-      )}
+      <ConfigPendingNotice
+        pending={Boolean(runtime?.config_pending)}
+        isPending={isPending}
+        testId={APPLY_PENDING_ID}
+        applyTestId={SESS_APPLY_RESTART}
+        onApply={onApplyRestart}
+      />
 
       <div className="ml-auto flex items-center gap-xs">
         <IconButton

@@ -1,0 +1,15 @@
+{
+  "tid": "t106",
+  "attempt": 1,
+  "execution_id": "499486b50dfd4906b51f598404e05156",
+  "status": "done",
+  "branch": "t106_env_list_config_pending_apply",
+  "base_sha": "9940cd79c2020bdeff43a5a453df9203356a7b85",
+  "spec_source_sha": "9940cd79c2020bdeff43a5a453df9203356a7b85",
+  "tests": "`scripts/run_gates.sh` exit 0；后端 2777 unit + integration 用例全绿，前端 756 用例全绿，类型/设计门禁与生产构建通过；新增 `tests/unit/test_t106_config_pending.py` 覆盖谓词真值表、三个读模型与配置抬升后的集合行翻转。",
+  "blackbox": "`CBROWSER_RUN_E2E=1 scripts/run_gates.sh` exit 0，108 例 E2E 通过（2 skipped），镜像由当前提交重建并锁定 sha256，端口与媒体网段隔离。",
+  "review": "full 双轴，Round 1 测试轴 1 条 important（SSE 填充恒真断言）已修；Round 2 code/test 双轴 PASS，`task.py review-status` overall=PASS / review_scope=ok / ac_review=ok，2 轮，未超 5 轮上限。",
+  "review_scope": "1e2158725670a39d",
+  "pending": [],
+  "findings": []
+}

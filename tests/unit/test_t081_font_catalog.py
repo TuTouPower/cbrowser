@@ -202,7 +202,7 @@ async def test_reads_never_touch_font_bytes(
         assert response.items[0].integrity.ok
         assert response.default_font_set_id["windows"] == result["set_id"]
         await coordinator.publish_profile_change(profile.id)
-        view = await make_runtime_response(runtime, coordinator=coordinator)
+        view = await make_runtime_response(runtime, coordinator=coordinator, current_config_version=1)
         assert view.font_set_id == result["set_id"]
     assert counters == {"check": 0, "sha": 0}
 

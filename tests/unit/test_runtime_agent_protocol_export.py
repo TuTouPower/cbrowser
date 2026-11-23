@@ -163,6 +163,7 @@ def test_runtime_state_fields_use_domain_enums():
         ProfileRuntimeResponse(**{**base, "observed_state": "bogus"})
     with pytest.raises(ValidationError):
         ProfileRuntimeStatusEvent(
+            config_pending=False,
             profile_id="p1",
             desired_state="bogus",
             observed_state="stopped",

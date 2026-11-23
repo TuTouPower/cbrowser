@@ -489,7 +489,7 @@ async def test_runtime_response_and_sse_carry_font_fields(
         profile_service=service,
         event_broadcaster=broadcaster,
     )
-    response = await make_runtime_response(_runtime(), coordinator)
+    response = await make_runtime_response(_runtime(), coordinator, current_config_version=1)
     assert response.font_set_id == set_id
     assert response.missing_fonts == []
 
@@ -524,7 +524,7 @@ async def test_runtime_response_when_unset_has_no_base_fonts_marker(
         profile_service=service,
         event_broadcaster=broadcaster,
     )
-    response = await make_runtime_response(_runtime(), coordinator)
+    response = await make_runtime_response(_runtime(), coordinator, current_config_version=1)
     assert response.font_set_id is None
     assert response.missing_fonts == []
 

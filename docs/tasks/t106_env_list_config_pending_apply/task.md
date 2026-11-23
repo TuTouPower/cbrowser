@@ -37,15 +37,15 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：领域层唯一 `config_pending` 谓词在 runtime 存在、`observed_state != "stopped"` 且当前配置版本高于运行版本时为真；停止态（实例已释放）、无 runtime、版本相等、仅元数据或仅 `capture_preview` 变更时为假；终态 error 仍为真；前端与各 surface 不再自行比较版本得出待应用。
-- [ ] AC-002：`config_pending` 随 `ProfileRuntimeProjection`（collection 行）、`ProfileRuntimeResponse`、`ProfileRuntimeStatusEvent`（SSE data）三个读模型交付；`cbrowser_v1.json` / `cbrowser_internal.json` 与生成 `d.ts` 同步，`check:api` 通过；该字段为只读派生事实，库中无对应存储列。
-- [ ] AC-003：`GET /api/v1/profiles/collection` 的行在 `runtime.config_pending` 为真时，环境管理表格该行显示待应用提示；为假或该行无 runtime 投影时不显示，且无 runtime 投影仍呈现显式未知态。
-- [ ] AC-004：卡片布局按同一 `config_pending` 与同一呈现单元显示或不显示待应用提示，与表格布局不存在口径漂移。
-- [ ] AC-005：表格与卡片的待应用行提供行内「应用并重启」入口；点击后仅目标环境经历停止并以新版本运行，应用完成后该行待应用提示消失，其它行不受影响；mutation 进行中/失败只作用于被点击的目标行。
-- [ ] AC-006：工作台入口页（`/session`）的运行中环境列表对 `config_pending` 为真的行一致显示待应用提示与行内应用入口，入口不与环境链接跳转语义冲突；为假时不显示。
-- [ ] AC-007：`SessionHeader`、`SessionDetailsPanel`、`SharedProfileBanners` 读 `runtime.config_pending`，在版本错配、版本相等、停止态三种情形下与列表口径一致；全仓视图层无残留的「待应用 = 版本比较」表达式。
-- [ ] AC-008：停留在环境管理页且不刷新、不导航，目标行 SSE `runtime_state` 带 `config_pending=true` 到达后，该行无需导航即从普通运行态转为待应用态并显示行内应用入口。
-- [ ] AC-009：测试覆盖 AC-001 至 AC-008（领域谓词、三个读模型填充、契约导出、表格/卡片/入口/会话各 surface、SSE 跃迁、profile 作用域守卫）；项目测试、类型检查与设计门禁通过，既有环境列表/会话测试回归通过。
+- [x] AC-001：领域层唯一 `config_pending` 谓词在 runtime 存在、`observed_state != "stopped"` 且当前配置版本高于运行版本时为真；停止态（实例已释放）、无 runtime、版本相等、仅元数据或仅 `capture_preview` 变更时为假；终态 error 仍为真；前端与各 surface 不再自行比较版本得出待应用。
+- [x] AC-002：`config_pending` 随 `ProfileRuntimeProjection`（collection 行）、`ProfileRuntimeResponse`、`ProfileRuntimeStatusEvent`（SSE data）三个读模型交付；`cbrowser_v1.json` / `cbrowser_internal.json` 与生成 `d.ts` 同步，`check:api` 通过；该字段为只读派生事实，库中无对应存储列。
+- [x] AC-003：`GET /api/v1/profiles/collection` 的行在 `runtime.config_pending` 为真时，环境管理表格该行显示待应用提示；为假或该行无 runtime 投影时不显示，且无 runtime 投影仍呈现显式未知态。
+- [x] AC-004：卡片布局按同一 `config_pending` 与同一呈现单元显示或不显示待应用提示，与表格布局不存在口径漂移。
+- [x] AC-005：表格与卡片的待应用行提供行内「应用并重启」入口；点击后仅目标环境经历停止并以新版本运行，应用完成后该行待应用提示消失，其它行不受影响；mutation 进行中/失败只作用于被点击的目标行。
+- [x] AC-006：工作台入口页（`/session`）的运行中环境列表对 `config_pending` 为真的行一致显示待应用提示与行内应用入口，入口不与环境链接跳转语义冲突；为假时不显示。
+- [x] AC-007：`SessionHeader`、`SessionDetailsPanel`、`SharedProfileBanners` 读 `runtime.config_pending`，在版本错配、版本相等、停止态三种情形下与列表口径一致；全仓视图层无残留的「待应用 = 版本比较」表达式。
+- [x] AC-008：停留在环境管理页且不刷新、不导航，目标行 SSE `runtime_state` 带 `config_pending=true` 到达后，该行无需导航即从普通运行态转为待应用态并显示行内应用入口。
+- [x] AC-009：测试覆盖 AC-001 至 AC-008（领域谓词、三个读模型填充、契约导出、表格/卡片/入口/会话各 surface、SSE 跃迁、profile 作用域守卫）；项目测试、类型检查与设计门禁通过，既有环境列表/会话测试回归通过。
 
 ### 可测试性声明
 

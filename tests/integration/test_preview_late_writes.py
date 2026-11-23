@@ -207,6 +207,7 @@ async def test_valid_observation_publishes_preview(env, monkeypatch) -> None:
 
 def _runtime_event(profile_id: str) -> ProfileRuntimeStatusEvent:
     return ProfileRuntimeStatusEvent(
+        config_pending=False,
         profile_id=profile_id,
         desired_state="running",
         observed_state="running",

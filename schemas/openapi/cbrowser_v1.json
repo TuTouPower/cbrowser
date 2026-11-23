@@ -9413,6 +9413,10 @@
             "title": "Config Version",
             "default": 1
           },
+          "config_pending": {
+            "type": "boolean",
+            "title": "Config Pending"
+          },
           "state_revision": {
             "type": "integer",
             "title": "State Revision",
@@ -9493,7 +9497,8 @@
         "type": "object",
         "required": [
           "desired_state",
-          "observed_state"
+          "observed_state",
+          "config_pending"
         ],
         "title": "ProfileRuntimeProjection",
         "description": "One collection row's runtime state (t098): the bounded page\ndelivers the runtime projection alongside the config row, so list,\ncard, session-entry and switcher consumers read state from the\ncollection itself instead of a separate all-profiles summary.\n``state_revision`` is the monotonic fence shared with operation\nresults and SSE events."
@@ -9541,6 +9546,10 @@
           "config_version": {
             "type": "integer",
             "title": "Config Version"
+          },
+          "config_pending": {
+            "type": "boolean",
+            "title": "Config Pending"
           },
           "state_revision": {
             "type": "integer",
@@ -9715,6 +9724,7 @@
           "observed_state",
           "runtime_instance_id",
           "config_version",
+          "config_pending",
           "failure_count",
           "restart_blocked",
           "last_exit_event_id",
@@ -9762,6 +9772,10 @@
             "type": "integer",
             "title": "Config Version",
             "default": 1
+          },
+          "config_pending": {
+            "type": "boolean",
+            "title": "Config Pending"
           },
           "state_revision": {
             "type": "integer",
@@ -9891,6 +9905,7 @@
           "profile_id",
           "desired_state",
           "observed_state",
+          "config_pending",
           "updated_at"
         ],
         "title": "ProfileRuntimeStatusEvent"

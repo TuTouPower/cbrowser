@@ -196,7 +196,7 @@ async def test_old_running_new_failed_keeps_error_until_new_running(tmp_path):
                 assert coordinator.get_last_error(profile.id) == error
                 rt_now = await service.get_runtime(profile.id)
                 assert coordinator.get_last_error(profile.id, runtime=rt_now) == error
-                view = await make_runtime_response(rt_now, coordinator=coordinator)
+                view = await make_runtime_response(rt_now, coordinator=coordinator, current_config_version=1)
                 assert view.last_coordinator_error == error
 
             # V2 start succeeds: the error clears.

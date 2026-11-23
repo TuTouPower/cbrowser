@@ -39,6 +39,18 @@ class _ProfileService:
     async def get_runtime(self, _profile_id: str):
         return self._runtime
 
+    async def get_profile(self, profile_id: str):
+        from cbrowser.domain.models import Profile, ProfileConfig
+
+        return Profile(
+            id=profile_id,
+            display_number=1,
+            config=ProfileConfig(name="Unit Profile"),
+            user_data_dir="/data/unit",
+            created_at="2026-11-04T00:00:00+00:00",
+            updated_at="2026-11-04T00:00:00+00:00",
+        )
+
 
 def _coordinator(handler) -> RuntimeCoordinator:
     transport = httpx.MockTransport(handler)

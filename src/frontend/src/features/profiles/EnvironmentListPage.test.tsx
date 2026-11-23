@@ -109,6 +109,7 @@ function runtime(
     observed_state: observed,
     runtime_instance_id: "inst-1",
     config_version: 1,
+    config_pending: false,
     state_revision: 1,
     failure_count: 0,
     restart_blocked: false,
@@ -131,6 +132,7 @@ function projectionOf(rt: ProfileRuntimeResponse) {
     desired_state: rt.desired_state,
     observed_state: rt.observed_state,
     config_version: rt.config_version,
+    config_pending: rt.config_pending,
     state_revision: rt.state_revision,
     runtime_instance_id: rt.runtime_instance_id,
     failure_count: rt.failure_count,
@@ -1318,5 +1320,116 @@ describe("EnvironmentListPage t073 操作栏与宽编辑弹窗", () => {
     ).mock.calls;
     expect(calls[0]![1]).toMatchObject({ name: "Alpha renamed" });
     expect(Object.keys(calls[0]![1] as object)).toEqual(["name"]);
+  });
+});
+
+describe("EnvironmentListPage t106 待应用读模型", () => {
+  function pendingFixture() {
+    const base = fixture();
+    const profiles = [
+      base.profiles[0]!,
+      profile({ id: "p2", name: "Beta", sort_order: 1 }),
+    ];
+    const runtimes: Record<string, ProfileRuntimeResponse> = {
+      p1: runtime("p1", "running", { config_pending: true }),
+      p2: runtime("p2", "running", { config_pending: false }),
+    };
+    const stopImpl = async (id: string) => {
+      const next = runtime(id, "stopped", { config_pending: false });
+      stub.runtimes[id] = next;
+      return next;
+    };
+    const setDesiredStateImpl = async (id: string) => {
+      const next = runtime(id, "running", { config_pending: false });
+      stub.runtimes[id] = next;
+      return next;
+    };
+    stub = makeStub({
+      profiles,
+      groups: base.groups,
+      proxies: base.proxies,
+      runtimes,
+      stopImpl,
+      setDesiredStateImpl,
+    });
+  }
+
+  it("表格只对 config_pending 为真的行显示待应用并可就地应用", async () => {
+    pendingFixture();
+    renderPage();
+    await screen.findByTestId("env-table");
+    expect(screen.getByTestId("env-config-pending-p1")).toHaveTextContent(
+      en.sessApplyPending,
+    );
+    expect(screen.queryByTestId("env-config-pending-p2")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("env-config-apply-p1"));
+    await waitFor(
+      () =>
+        expect(stub.spies.profiles.stop).toHaveBeenCalledWith(
+          "p1",
+          expect.any(String),
+        ),
+      { timeout: 5000 },
+    );
+    await waitFor(
+      () =>
+        expect(screen.queryByTestId("env-config-pending-p1")).toBeNull(),
+      { timeout: 10000 },
+    );
+    expect(stub.spies.profiles.stop).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("env-row-p2")).toBeInTheDocument();
+    expect(screen.queryByTestId("env-config-pending-p2")).toBeNull();
+  });
+
+  it("卡片布局与表格共用同一待应用判定", async () => {
+    pendingFixture();
+    localStorage.setItem("cbrowser.environments.layout", "card");
+    renderPage();
+    await screen.findByTestId("env-card-grid");
+    expect(screen.getByTestId("env-config-pending-p1")).toHaveTextContent(
+      en.sessApplyPending,
+    );
+    expect(screen.queryByTestId("env-config-pending-p2")).toBeNull();
+  });
+
+  it("集合缓存收到 config_pending 更新后无需导航即出现待应用", async () => {
+    const base = fixture();
+    stub = makeStub({
+      profiles: base.profiles,
+      groups: base.groups,
+      proxies: base.proxies,
+      runtimes: base.runtimes,
+    });
+    const { queryClient } = renderPage();
+    await screen.findByTestId("env-table");
+    expect(screen.queryByTestId("env-config-pending-p1")).toBeNull();
+
+    const next = runtime("p1", "running", {
+      config_pending: true,
+      state_revision: 2,
+    });
+    act(() => {
+      const caches = queryClient.getQueriesData<{
+        items: Array<Record<string, unknown>>;
+      }>({ queryKey: profileKeys.collectionPrefix() });
+      for (const [key, page] of caches) {
+        if (!page) continue;
+        queryClient.setQueryData(key, {
+          ...page,
+          items: page.items.map((item) =>
+            item.id === "p1"
+              ? { ...item, runtime: projectionOf(next) }
+              : item,
+          ),
+        });
+      }
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("env-config-pending-p1")).toHaveTextContent(
+        en.sessApplyPending,
+      ),
+    );
   });
 });

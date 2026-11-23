@@ -681,7 +681,9 @@ class ProfileService:
             base = ProfileResponse.from_domain(p)
             rt = runtimes.get(p.id)
             projection = (
-                ProfileRuntimeProjection.from_runtime(rt)
+                ProfileRuntimeProjection.from_runtime(
+                    rt, p.current_config_version
+                )
                 if rt is not None
                 else None
             )
