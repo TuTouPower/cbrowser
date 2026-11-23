@@ -1,7 +1,7 @@
 ---
 tid: "t105"
 slug: "proxy_probe_expiry_auto_reprobe"
-title: "代理观测过期自动重测与测速结果恢复"
+title: "取消代理观测 TTL 并统一快照失效语义"
 status: "backlog"
 branch: ""
 worktree: ""
@@ -12,7 +12,7 @@ diff_anchor: ""
 spec_source_sha: ""
 depends_on: ""
 conflicts_with: ""
-note: "来源 p168：24h TTL 过期后测速结果静默消失且无自动重测；用户裁决按 spec 补过期自动重测"
+note: "来源 p168；用户 2026-11-23 裁决取消 24h TTL：观测快照整条永久有效，仅端点/凭据变化时失效并重测；上一版'过期自动重测'方案作废"
 ---
 
 # Task 进展
