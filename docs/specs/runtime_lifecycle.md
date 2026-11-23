@@ -1,7 +1,7 @@
 ---
 slug: runtime_lifecycle
 status: active
-tasks: [baseline, t075, t076, t078, t082, t083, t091, t097, t098]
+tasks: [baseline, t075, t076, t078, t082, t083, t091, t097, t098, t107]
 ---
 # 需求规范：Runtime 生命周期协调
 

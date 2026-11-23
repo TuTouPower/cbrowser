@@ -1,0 +1,15 @@
+{
+  "tid": "t107",
+  "attempt": 1,
+  "execution_id": "719a5e4043a74fcdaaa99f7dfacf4aa5",
+  "status": "done",
+  "branch": "t107_write_path_lifecycle_domain_boundaries",
+  "base_sha": "3180cb90d72829eadadd481e73517f83c2188990",
+  "spec_source_sha": "3180cb90d72829eadadd481e73517f83c2188990",
+  "tests": "`scripts/run_gates.sh` exit 0；后端 unit/integration 全绿，前端测试与生产构建通过；新增 `tests/unit/test_t107_domain_boundaries.py` 12 例直测新边界（字段投影覆盖、身份分类、启动前置与失败原因、恢复路径/schema/单项切换）。",
+  "blackbox": "`CBROWSER_RUN_E2E=1 scripts/run_gates.sh` exit 0，108 例通过（2 skipped），镜像由当前提交重建并锁定 sha256。",
+  "review": "full 双轴，Round 1 code/test 共 4 条 finding（1 important 审计时间漂移、1 important AC-005 缺直测、2 minor 死参数/死变量）全部修复；Round 2 双轴 PASS，`task.py review-status` overall=PASS / review_scope=ok / ac_review=ok，2 轮，未超 5 轮上限。",
+  "review_scope": "0fb6d8c92a8c04e2",
+  "pending": [],
+  "findings": []
+}

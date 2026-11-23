@@ -614,37 +614,36 @@ def _recover_interrupted(journal_path: Path) -> bool:
     return True
 
 
-def restore_point(args: argparse.Namespace) -> int:
+def _restore_paths(
+    args: argparse.Namespace,
+) -> tuple[Path, Path, Path, Path]:
     point = Path(args.point)
     db_path = Path(args.db)
     data_root = Path(args.data_root).resolve()
     journal_path = (
         Path(args.journal) if args.journal else _default_journal(data_root)
     )
-    if _recover_interrupted(journal_path):
-        print(
-            "restore_point: an interrupted switch was rolled back to the"
-            " previous set; re-run restore to proceed",
-            file=sys.stderr,
+    return point, db_path, data_root, journal_path
+
+
+def _assert_compatible_schema(db_path: Path, manifest: dict) -> None:
+    if not db_path.is_file():
+        return
+    live_stamp = _schema_stamp(db_path)
+    if live_stamp != manifest["db"]["schema_stamp"]:
+        raise RestorePointError(
+            f"schema stamp mismatch: restore point has"
+            f" {manifest['db']['schema_stamp']}, live database has"
+            f" {live_stamp}; cross-generation restore is refused"
         )
-        return 3
 
-    manifest = validate_point(point)
-    if db_path.is_file():
-        live_stamp = _schema_stamp(db_path)
-        if live_stamp != manifest["db"]["schema_stamp"]:
-            raise RestorePointError(
-                f"schema stamp mismatch: restore point has"
-                f" {manifest['db']['schema_stamp']}, live database has"
-                f" {live_stamp}; cross-generation restore is refused"
-            )
 
-    # Staging leftovers of a run killed before its journal was
-    # written can never be resumed (their switch id is gone with the
-    # process); sweep them so repeated incidents do not accumulate
-    # profile-sized orphans next to the live set.  The retained
-    # .pre-restore-* sets are never swept — they are the rollback
-    # guarantee, not debris.
+def _sweep_stale_staging(
+    db_path: Path, data_root: Path, manifest: dict
+) -> None:
+    # Staging leftovers of a run killed before its journal was written
+    # can never be resumed; .pre-restore-* sets are retained as the
+    # rollback guarantee and never swept.
     for stale in db_path.parent.glob(db_path.name + ".restore-staging-*"):
         if stale.is_dir():
             shutil.rmtree(stale, ignore_errors=True)
@@ -661,12 +660,10 @@ def restore_point(args: argparse.Namespace) -> int:
         if stale.is_dir():
             shutil.rmtree(stale, ignore_errors=True)
 
-    switch_id = uuid.uuid4().hex[:12]
-    # Stage validated copies next to their targets (same filesystems).
-    # An empty restore site (fresh install) has neither directory yet.
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    data_root.mkdir(parents=True, exist_ok=True)
-    items: list[dict] = []
+
+def _stage_db_item(
+    point: Path, db_path: Path, manifest: dict, switch_id: str
+) -> dict:
     db_staged = db_path.with_name(db_path.name + f".restore-staging-{switch_id}")
     db_previous = db_path.with_name(db_path.name + f".pre-restore-{switch_id}")
     disk = shutil.disk_usage(db_path.parent)
@@ -676,22 +673,28 @@ def restore_point(args: argparse.Namespace) -> int:
     if _sha256_file(db_staged) != manifest["db"]["sha256"]:
         db_staged.unlink(missing_ok=True)
         raise RestorePointError("staged database copy failed verification")
-    items.append(
-        {
-            "kind": "db",
-            "id": "control-db",
-            "live_path": str(db_path),
-            "staged_path": str(db_staged),
-            "previous_path": str(db_previous) if db_path.exists() else None,
-            "state": "pending",
-            "sidecars": True,
-        }
-    )
+    return {
+        "kind": "db",
+        "id": "control-db",
+        "live_path": str(db_path),
+        "staged_path": str(db_staged),
+        "previous_path": str(db_previous) if db_path.exists() else None,
+        "state": "pending",
+        "sidecars": True,
+    }
+
+
+def _stage_profile_items(
+    point: Path, data_root: Path, manifest: dict, switch_id: str
+) -> list[dict]:
     profiles_bytes = sum(p["bytes"] for p in manifest["profiles"])
-    extensions_bytes = sum(e["bytes"] for e in manifest.get("extensions", []))
+    extensions_bytes = sum(
+        e["bytes"] for e in manifest.get("extensions", [])
+    )
     disk = shutil.disk_usage(data_root)
     if disk.free < profiles_bytes + extensions_bytes:
         raise RestorePointError("insufficient free space on the data root")
+    items: list[dict] = []
     for profile in manifest["profiles"]:
         live_dir = _profile_live_dir(data_root, manifest, profile)
         staged_dir = live_dir.with_name(f".restore-staging-{switch_id}")
@@ -711,15 +714,81 @@ def restore_point(args: argparse.Namespace) -> int:
                 "id": profile["id"],
                 "live_path": str(live_dir),
                 "staged_path": str(staged_dir),
-                "previous_path": str(previous_dir) if live_dir.exists() else None,
+                "previous_path": (
+                    str(previous_dir) if live_dir.exists() else None
+                ),
                 "state": "pending",
                 "sidecars": False,
             }
         )
-    ext_item = _stage_extensions_restore(manifest, point, data_root, switch_id)
+    return items
+
+
+def _stage_restore_items(
+    point: Path,
+    db_path: Path,
+    data_root: Path,
+    manifest: dict,
+    switch_id: str,
+) -> list[dict]:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    data_root.mkdir(parents=True, exist_ok=True)
+    items = [_stage_db_item(point, db_path, manifest, switch_id)]
+    items.extend(_stage_profile_items(point, data_root, manifest, switch_id))
+    ext_item = _stage_extensions_restore(
+        manifest, point, data_root, switch_id
+    )
     if ext_item is not None:
         items.append(ext_item)
+    return items
 
+
+def _switch_item(
+    item: dict, journal_path: Path, journal: dict, manifest: dict
+) -> None:
+    live = Path(item["live_path"])
+    staged = Path(item["staged_path"])
+    previous = Path(item["previous_path"]) if item["previous_path"] else None
+    moved = False
+    if previous is not None and live.exists():
+        live.replace(previous)
+        if item.get("sidecars"):
+            for suffix in ("-wal", "-shm"):
+                sidecar = Path(str(live) + suffix)
+                if sidecar.exists():
+                    sidecar.replace(Path(str(previous) + suffix))
+        moved = True
+    if item["kind"] in ("db", "extensions") or point_has_dir(
+        manifest, item["id"]
+    ):
+        staged.replace(live)
+        moved = True
+    if moved:
+        # Renames must be durable before the journal records them.
+        _fsync_dir(live.parent)
+    item["state"] = "switched"
+    journal["updated_at"] = _utc_now()
+    _atomic_write_json(journal_path, journal)
+
+
+def restore_point(args: argparse.Namespace) -> int:
+    point, db_path, data_root, journal_path = _restore_paths(args)
+    if _recover_interrupted(journal_path):
+        print(
+            "restore_point: an interrupted switch was rolled back to the"
+            " previous set; re-run restore to proceed",
+            file=sys.stderr,
+        )
+        return 3
+
+    manifest = validate_point(point)
+    _assert_compatible_schema(db_path, manifest)
+    _sweep_stale_staging(db_path, data_root, manifest)
+
+    switch_id = uuid.uuid4().hex[:12]
+    items = _stage_restore_items(
+        point, db_path, data_root, manifest, switch_id
+    )
     journal = {
         "version": FORMAT_VERSION,
         "switch_id": switch_id,
@@ -733,29 +802,7 @@ def restore_point(args: argparse.Namespace) -> int:
     _atomic_write_json(journal_path, journal)
     try:
         for item in items:
-            live = Path(item["live_path"])
-            staged = Path(item["staged_path"])
-            previous = Path(item["previous_path"]) if item["previous_path"] else None
-            moved = False
-            if previous is not None and live.exists():
-                live.replace(previous)
-                if item.get("sidecars"):
-                    for suffix in ("-wal", "-shm"):
-                        sidecar = Path(str(live) + suffix)
-                        if sidecar.exists():
-                            sidecar.replace(Path(str(previous) + suffix))
-                moved = True
-            if item["kind"] in ("db", "extensions") or (point_has_dir(manifest, item["id"])):
-                staged.replace(live)
-                moved = True
-            if moved:
-                # The renames must be durable before the journal
-                # records them, or a power loss could leave the
-                # journal ahead of the filesystem it describes.
-                _fsync_dir(live.parent)
-            item["state"] = "switched"
-            journal["updated_at"] = _utc_now()
-            _atomic_write_json(journal_path, journal)
+            _switch_item(item, journal_path, journal, manifest)
     except BaseException:
         print(
             "restore_point: switch interrupted; run restore again to roll"
@@ -771,7 +818,6 @@ def restore_point(args: argparse.Namespace) -> int:
         f" *.pre-restore-{switch_id} next to the restored targets"
     )
     return 0
-
 
 def point_has_dir(manifest: dict, profile_id: str) -> bool:
     for profile in manifest["profiles"]:

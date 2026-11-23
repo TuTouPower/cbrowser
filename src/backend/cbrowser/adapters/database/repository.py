@@ -695,6 +695,94 @@ class ProfileRepository:
                 (row[0], row[1]): row[2] for row in result.all() if row[1]
             }
 
+    @staticmethod
+    def _profile_config_from_model(m: Any) -> ProfileConfig:
+        """Read the whole config from the model using the model field set."""
+        data: dict[str, Any] = {}
+        for name in ProfileConfig.model_fields:
+            value = getattr(m, name)
+            if name == "extension_ids":
+                value = json.loads(value) if value else []
+            elif name == "allow_extensions":
+                value = bool(value)
+            data[name] = value
+        return ProfileConfig(**data)
+
+    @staticmethod
+    def _apply_config_to_model(
+        m: Any,
+        merged: ProfileConfig,
+        old: ProfileConfig,
+        new_version: int,
+        now: str,
+    ) -> None:
+        for name in ProfileConfig.model_fields:
+            value = getattr(merged, name)
+            if name == "extension_ids":
+                value = json.dumps(value)
+            setattr(m, name, value)
+        if old.capture_preview != merged.capture_preview:
+            m.capture_preview_epoch = (m.capture_preview_epoch or 0) + 1
+        m.current_config_version = new_version
+        m.updated_at = now
+
+    @staticmethod
+    async def _next_config_version(
+        session: Any,
+        profile_id: str,
+        old: ProfileConfig,
+        merged: ProfileConfig,
+        current_version: int,
+    ) -> tuple[int, bool]:
+        runtime_changed = any(
+            getattr(old, key) != getattr(merged, key)
+            for key in CONFIG_VERSION_FIELDS
+        )
+        if not runtime_changed:
+            return current_version, False
+        max_v_stmt = select(
+            func.max(ProfileConfigVersionModel.version)
+        ).where(ProfileConfigVersionModel.profile_id == profile_id)
+        max_v = (await session.execute(max_v_stmt)).scalar() or 0
+        return max_v + 1, True
+
+    @staticmethod
+    async def _write_config_version_snapshot(
+        session: Any, profile_id: str, merged: ProfileConfig, version: int, now: str
+    ) -> None:
+        proxy_credential_revision: int | None = None
+        if merged.proxy_id:
+            proxy_model = await session.get(ProxyModel, merged.proxy_id)
+            if proxy_model is not None:
+                proxy_credential_revision = proxy_model.credential_revision
+        session.add(
+            ProfileConfigVersionModel(
+                id=str(uuid.uuid4()),
+                profile_id=profile_id,
+                version=version,
+                snapshot=json.dumps(
+                    {
+                        "config": merged.model_dump(),
+                        "proxy_credential_revision": proxy_credential_revision,
+                    }
+                ),
+                created_at=now,
+            )
+        )
+
+    async def _replay_profile_update(
+        self, session: Any, operation_id: str | None, sig_hash: str, profile_id: str
+    ) -> tuple[bool, Profile | None]:
+        audit = await self._match_operation_audit(
+            session, operation_id, sig_hash
+        )
+        if audit is None:
+            return False, None
+        existing = await self._load_profile_model(session, profile_id)
+        if existing is None:
+            return True, None
+        return True, self._to_domain_profile(existing)
+
     async def update_profile(
         self,
         profile_id: str,
@@ -710,68 +798,29 @@ class ProfileRepository:
         the instant policy (capture_preview) are written directly.
         Performs update under write_transaction.
         """
-        if isinstance(patch_data, ProfileConfig):
-            patch_dict = patch_data.model_dump()
-        else:
-            patch_dict = dict(patch_data)
-
-        sig_hash = _hash_request(
-            audit_action,
-            profile_id,
-            {"patch": patch_dict},
+        patch_dict = (
+            patch_data.model_dump()
+            if isinstance(patch_data, ProfileConfig)
+            else dict(patch_data)
         )
+        sig_hash = _hash_request(audit_action, profile_id, {"patch": patch_dict})
         now = utc_now_iso()
-
         try:
             async with self._session_maker() as session, write_transaction(session):
-                audit = await self._match_operation_audit(
-                    session, operation_id, sig_hash
+                replay_exists, replayed = await self._replay_profile_update(
+                    session, operation_id, sig_hash, profile_id
                 )
-                if audit is not None:
-                    existing = await self._load_profile_model(session, profile_id)
-                    if existing is not None:
-                        return self._to_domain_profile(existing)
-                    # Replay against a since-deleted target: the predictable
-                    # result is the same "not found" as a fresh update.
-                    return None
+                if replay_exists:
+                    return replayed
 
                 p_model = await self._load_profile_model(session, profile_id)
                 if not p_model:
                     return None
 
-                # Read fresh current config from database row
-                current_dict = {
-                    "name": p_model.name,
-                    "fingerprint_seed": p_model.fingerprint_seed,
-                    "group_id": p_model.group_id,
-                    "proxy_id": p_model.proxy_id,
-                    "timezone": p_model.timezone,
-                    "locale": p_model.locale,
-                    "screen_width": p_model.screen_width,
-                    "screen_height": p_model.screen_height,
-                    "geoip": p_model.geoip,
-                    "clipboard_sync": p_model.clipboard_sync,
-                    "color_scheme": p_model.color_scheme,
-                    "fingerprint_platform": p_model.fingerprint_platform,
-                    "font_set_id": p_model.font_set_id,
-                    "include_cjk_fonts": p_model.include_cjk_fonts,
-                    "allow_extensions": bool(p_model.allow_extensions),
-                    "extension_ids": json.loads(p_model.extension_ids)
-                    if p_model.extension_ids
-                    else [],
-                    "set_google_default": p_model.set_google_default,
-                    "capture_preview": p_model.capture_preview,
-                    "restore_session": p_model.restore_session,
-                    "mute_audio": p_model.mute_audio,
-                    "notes": p_model.notes,
-                    "sort_order": p_model.sort_order,
-                }
-
-                # Merge ONLY the supplied patch fields
-                old_cfg = ProfileConfig(**current_dict)
+                old_cfg = self._profile_config_from_model(p_model)
+                current_dict = old_cfg.model_dump()
                 current_dict.update(patch_dict)
                 merged_cfg = ProfileConfig(**current_dict)
-
                 if merged_cfg.extension_ids and (
                     "extension_ids" in patch_dict
                     or patch_dict.get("allow_extensions") is True
@@ -780,100 +829,40 @@ class ProfileRepository:
                         session, merged_cfg.extension_ids
                     )
 
-                runtime_changed = any(
-                    getattr(old_cfg, key) != getattr(merged_cfg, key)
-                    for key in CONFIG_VERSION_FIELDS
+                new_version, runtime_changed = await self._next_config_version(
+                    session,
+                    profile_id,
+                    old_cfg,
+                    merged_cfg,
+                    p_model.current_config_version,
                 )
-                new_version = p_model.current_config_version
+                self._apply_config_to_model(
+                    p_model, merged_cfg, old_cfg, new_version, now
+                )
                 if runtime_changed:
-                    max_v_stmt = select(
-                        func.max(ProfileConfigVersionModel.version)
-                    ).where(ProfileConfigVersionModel.profile_id == profile_id)
-                    max_v = (await session.execute(max_v_stmt)).scalar() or 0
-                    new_version = max_v + 1
-
-                # Update model fields
-                p_model.name = merged_cfg.name
-                p_model.fingerprint_seed = merged_cfg.fingerprint_seed
-                p_model.group_id = merged_cfg.group_id
-                p_model.proxy_id = merged_cfg.proxy_id
-                p_model.timezone = merged_cfg.timezone
-                p_model.locale = merged_cfg.locale
-                p_model.screen_width = merged_cfg.screen_width
-                p_model.screen_height = merged_cfg.screen_height
-                p_model.geoip = merged_cfg.geoip
-                p_model.clipboard_sync = merged_cfg.clipboard_sync
-                p_model.color_scheme = merged_cfg.color_scheme
-                p_model.fingerprint_platform = merged_cfg.fingerprint_platform
-                p_model.font_set_id = merged_cfg.font_set_id
-                p_model.include_cjk_fonts = merged_cfg.include_cjk_fonts
-                p_model.allow_extensions = merged_cfg.allow_extensions
-                p_model.extension_ids = json.dumps(merged_cfg.extension_ids)
-                p_model.set_google_default = merged_cfg.set_google_default
-                if old_cfg.capture_preview != merged_cfg.capture_preview:
-                    p_model.capture_preview_epoch = (
-                        p_model.capture_preview_epoch or 0
-                    ) + 1
-                p_model.capture_preview = merged_cfg.capture_preview
-                p_model.restore_session = merged_cfg.restore_session
-                p_model.mute_audio = merged_cfg.mute_audio
-                p_model.notes = merged_cfg.notes
-                p_model.sort_order = merged_cfg.sort_order
-                p_model.current_config_version = new_version
-                p_model.updated_at = now
-
-                if runtime_changed:
-                    # Snapshot holds only the proxy id and credential
-                    # revision; the password itself lives solely in proxies.
-                    proxy_credential_revision: int | None = None
-                    if merged_cfg.proxy_id:
-                        proxy_model = await session.get(
-                            ProxyModel, merged_cfg.proxy_id
-                        )
-                        if proxy_model is not None:
-                            proxy_credential_revision = (
-                                proxy_model.credential_revision
-                            )
-                    snapshot_data = {
-                        "config": merged_cfg.model_dump(),
-                        "proxy_credential_revision": proxy_credential_revision,
-                    }
-                    session.add(
-                        ProfileConfigVersionModel(
-                            id=str(uuid.uuid4()),
-                            profile_id=profile_id,
-                            version=new_version,
-                            snapshot=json.dumps(snapshot_data),
-                            created_at=now,
-                        )
+                    await self._write_config_version_snapshot(
+                        session, profile_id, merged_cfg, new_version, now
                     )
-
                 if operation_id:
-                    session.add(
-                        AuditEventModel(
-                            id=operation_id,
-                            entity_type="profile",
-                            entity_id=profile_id,
-                            action=audit_action,
-                            actor="system",
-                            details=json.dumps(
-                                {"sig_hash": sig_hash, "version": new_version}
-                            ),
-                            created_at=now,
-                        )
+                    self._record_operation_audit(
+                        session,
+                        operation_id=operation_id,
+                        entity_type="profile",
+                        entity_id=profile_id,
+                        action=audit_action,
+                        sig_hash=sig_hash,
+                        now=now,
+                        extra={"version": new_version},
                     )
 
             return await self.get_profile(profile_id)
         except IntegrityError:
             async with self._session_maker() as session:
-                audit = await self._match_operation_audit(
-                    session, operation_id, sig_hash
+                replay_exists, replayed = await self._replay_profile_update(
+                    session, operation_id, sig_hash, profile_id
                 )
-                if audit is not None:
-                    existing = await self._load_profile_model(session, profile_id)
-                    if existing is not None:
-                        return self._to_domain_profile(existing)
-                    return None
+                if replay_exists:
+                    return replayed
             raise
 
     async def delete_profile(self, profile_id: str) -> bool:

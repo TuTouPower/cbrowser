@@ -1,7 +1,7 @@
 ---
 slug: profile_management
 status: active
-tasks: [baseline, t075, t076, t077, t078, t079, t090, t094, t095, t098, t099, t101, t103, t104, t106]
+tasks: [baseline, t075, t076, t077, t078, t079, t090, t094, t095, t098, t099, t101, t103, t104, t106, t107]
 ---
 # 需求规范：Profile 管理与外部标签页
 

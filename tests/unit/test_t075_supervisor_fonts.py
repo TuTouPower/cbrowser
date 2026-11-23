@@ -162,7 +162,11 @@ async def test_core_refuses_unbound_profile(
             token_file=None,
             agent_key_file=key_file,
         )
-        core.report_terminal_observation = AsyncMock(return_value=True)  # type: ignore[method-assign]
+        monkeypatch.setattr(
+            core,
+            "report_terminal_observation",
+            AsyncMock(return_value=True),
+        )
         with pytest.raises(FontSetUnavailableError) as exc:
             await core.start_profile(
                 "p1",

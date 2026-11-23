@@ -208,6 +208,8 @@ API 通过 `ExtensionCatalogService`（`services/extension_catalog.py`）与中�
 
 ### 5.10 服务端异步作业编排与轻量出口探测（t094，t095 补统一状态管道与并发）
 
+- 写路径与生命周期按领域边界组织（t107，ADR 044）：Profile 更新由显式更新计划编排——补丁归一化、平台/字体重绑、引用校验、扩展校验、错误翻译各自独立可测；Repository 以 `ProfileConfig.model_fields` 为唯一字段来源做 config→ORM 投影，不再维护平行字段清单。Supervisor 启动与恢复点切换改为阶段化状态机，编排函数只推进 phase，阶段各自承载前置校验与回滚；扩展身份分类为纯规则表。对外行为、API、DB schema 与恢复点格式不变。
+
 - 配置待应用事实由领域层唯一谓词派生（t106）：runtime 存在且非停止态、当前配置版本高于运行绑定版本时 `config_pending=true`；该事实随有界集合页的 runtime 投影、runtime 响应与 SSE 事件一起交付，不落 DB、不由前端比较版本得出。前端各界面只读 `config_pending`，「应用并重启」收敛为单一命令 hook（stop + 以新版本启动 + 按 Profile 隔离动作状态），列表行、卡片、工作台入口、会话页头与详情共用同一呈现单元。
 
 - **统一状态管道（t095 AC-002）**：成员每次状态迁移只发一次 `probe_job_progress` SSE 事件：服务端在成员终态写库后推送携带只读 `processed` 的权威作业快照，前端同一处理器既把快照写入作业读模型缓存，又使代理列表查询失效重取——观测已先于事件落库，失效即取回逐条最新结果。行状态随事件逐条刷新，不靠固定间隔轮询；代理列表 Submission 时的一次失效只用于冻结作用域初值。

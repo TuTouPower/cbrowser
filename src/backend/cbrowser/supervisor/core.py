@@ -2981,55 +2981,17 @@ class SupervisorCore:
             self.docker.remember_profile_number(profile_id, profile_number)
         lock = self._profile_locks.lock_for(profile_id)
         async with lock:
-            stale_stopped_session: ActiveSession | None = None
-            if profile_id in self._sessions:
-                session = self._sessions[profile_id]
-                if session.observed_state == "running":
-                    logger.info(
-                        "Profile already active: profile=%s instance=%s",
-                        profile_id,
-                        session.runtime_instance_id,
-                    )
-                    return session
-                if (
-                    session.observed_state == "stopped"
-                    and session.desired_state == "stopped"
-                ):
-                    stale_stopped_session = session
-                else:
-                    raise LifecycleConflictError(
-                        "Existing runtime must finish cleanup before a new start"
-                    )
-
-            if force:
-                if not operation_id:
-                    raise ValueError("Manual retry requires an idempotent operation ID")
-                await self.reset_blocked(profile_id, operation_id)
-            # t083: intent comes from the minimal state cache; an
-            # unknown/unauthoritative state refuses the start instead
-            # of acting on a guess (the former HTTP failure posture).
-            runtime = await self._state_entry(profile_id)
-            if runtime is None:
-                raise LifecycleConflictError(
-                    "API runtime state is unavailable"
-                )
-            if runtime["desired_state"] != "running":
-                raise LifecycleConflictError(
-                    "API running intent is required before starting a runtime"
-                )
-
-            if runtime["restart_blocked"]:
-                raise LifecycleConflictError(
-                    "Automatic retries exhausted; manual retry required"
-                )
-
-            if stale_stopped_session is not None:
+            running, stale = self._start_session_precheck(profile_id)
+            if running is not None:
+                return running
+            await self._assert_start_intent(profile_id, force, operation_id)
+            if stale is not None:
                 await self._stop_session_unlocked(
                     profile_id,
-                    expected_instance=stale_stopped_session.runtime_instance_id,
+                    expected_instance=stale.runtime_instance_id,
                     operation_id=(
                         f"prestart_cleanup:{profile_id}:"
-                        f"{stale_stopped_session.runtime_instance_id}"
+                        f"{stale.runtime_instance_id}"
                     ),
                     report_to_api=False,
                 )
@@ -3041,256 +3003,346 @@ class SupervisorCore:
                 if key[0] != profile_id
             }
             dirs = self.docker.prepare_profile_directories(profile_id)
-
             snap_path = dirs["runtime"] / "snapshot.json"
-            # Credentials live in the Profile secret dir and are mounted
-            # read-only into the Browser container, which connects directly
-            # to the upstream proxy.
             secret_dir = self._prepare_secret_dir(profile_id)
             creds_path = secret_dir / PROXY_CREDENTIALS_FILENAME
 
-            # Bind runtime instance via internal supervisor API
+            await self._bind_runtime_instance(
+                profile_id, runtime_instance_id, config_version
+            )
             try:
-                bind_resp = await self.api.post(
-                    f"/api/v1/internal/supervisor/runtimes/bind?profile_id={quote(profile_id, safe='')}",
-                    headers=self._auth_headers(),
-                    json={
-                        "runtime_instance_id": runtime_instance_id,
-                        "config_version": config_version,
-                    },
-                )
-                if bind_resp.status_code != 200:
-                    raise RuntimeError(
-                        f"API instance binding failed: status={bind_resp.status_code}"
-                    )
-                # t083: the bind changed the mirrored state.
-                self.state_cache.note_local_write()
-            except Exception as e:
-                logger.error("Instance binding failed: error_type=%s", type(e).__name__)
-                raise
-
-            try:
-                self._validate_font_set(
+                await self._prepare_start_artifacts(
+                    profile_id,
                     config,
-                    runtime_instance_id,
-                    profile_id=profile_id,
-                    config_version=config_version,
-                )
-                self._validate_extensions(
-                    config,
-                    runtime_instance_id,
-                    profile_id=profile_id,
-                    config_version=config_version,
-                )
-                proxy_credentials = await self._resolve_proxy_credentials(
-                    profile_id, config, config_version
-                )
-                snapshot = ConfigVersionSnapshot(
-                    id=f"snap_{uuid.uuid4().hex[:12]}",
-                    profile_id=profile_id,
-                    version=config_version,
-                    config=config.model_dump(),
-                    proxy_credential_revision=(
-                        proxy_credentials["proxy_credential_revision"]
-                        if proxy_credentials is not None
-                        else None
-                    ),
-                    created_at=datetime.now(UTC).isoformat(),
-                )
-                self._write_runtime_snapshot(snap_path, snapshot)
-                # Old-version residue: the runtime dir is no longer a
-                # credentials location and is never written to. Drop any
-                # stale copy left behind by an earlier generation.
-                (dirs["runtime"] / PROXY_CREDENTIALS_FILENAME).unlink(
-                    missing_ok=True
-                )
-                if proxy_credentials is not None:
-                    self._write_proxy_credentials(
-                        creds_path,
-                        {
-                            "scheme": proxy_credentials["scheme"],
-                            "host": proxy_credentials["host"],
-                            "port": proxy_credentials["port"],
-                            "username": proxy_credentials["username"],
-                            "password": proxy_credentials["password"],
-                            "credential_revision": proxy_credentials[
-                                "credential_revision"
-                            ],
-                        },
-                    )
-                else:
-                    # No proxy: never leave a stale secret behind.
-                    creds_path.unlink(missing_ok=True)
-
-                port = await self.ports.allocate(profile_id)
-                await self.docker.create_profile_network(profile_id)
-                media_addresses = None
-                resolved_gateway = await asyncio.to_thread(self._resolve_gateway_id)
-                if resolved_gateway:
-                    media_addresses = await asyncio.to_thread(
-                        self.docker.attach_profile_infrastructure,
-                        profile_id,
-                        resolved_gateway,
-                        gateway_port=self.gateway_endpoint.port,
-                    )
-                await self._report_observed(
-                    profile_id, runtime_instance_id, "starting", config_version
-                )
-
-                b_container = await self.docker.start_browser_container(
-                    profile_id=profile_id,
-                    runtime_instance_id=runtime_instance_id,
-                    snapshot_json_path=snap_path,
-                )
-
-                for _ in range(150):
-                    if browser_runtime_ready(
-                        dirs["runtime"], profile_id, runtime_instance_id, config_version
-                    ):
-                        break
-                    await asyncio.sleep(0.2)
-                if not browser_runtime_ready(
-                    dirs["runtime"], profile_id, runtime_instance_id, config_version
-                ):
-                    raise DockerSandboxError(
-                        "Timed out waiting for current Browser instance readiness"
-                    )
-
-                # Launch Stream. Agent credentials live outside the Browser
-                # runtime mount and are readable only by the Stream container.
-                (dirs["runtime"] / "agent_secret.txt").unlink(missing_ok=True)
-                agent_secret, selkies_tokens_file = self._prepare_stream_secrets(
-                    profile_id,
-                    runtime_instance_id,
-                    overwrite_agent_secret=True,
-                )
-                s_container = await self.docker.start_stream_container(
-                    profile_id=profile_id,
-                    runtime_instance_id=runtime_instance_id,
-                    browser_container_name=b_container.name,
-                    udp_mux_port=port,
-                    gateway_url=(
-                        media_addresses.get("gateway_url") if media_addresses else None
-                    )
-                    or self.gateway_url,
-                    agent_secret_path=agent_secret,
-                    selkies_tokens_path=selkies_tokens_file,
-                    snapshot_json_path=snap_path,
-                    gateway_port=self.gateway_endpoint.port,
-                )
-
-                if self.gateway_control is None:
-                    raise RuntimeError("Gateway control RPC is required for readiness")
-                async with asyncio.timeout(15):
-                    while True:
-                        await asyncio.to_thread(s_container.reload)
-                        if s_container.status != "running":
-                            raise DockerSandboxError(
-                                "Stream exited before registration"
-                            )
-                        try:
-                            await self.gateway_control.has_foreground_viewers(
-                                profile_id, runtime_instance_id
-                            )
-                            break
-                        except httpx.HTTPStatusError as exc:
-                            if exc.response.status_code != 503:
-                                raise
-                        except httpx.TransportError:
-                            pass
-                        await asyncio.sleep(0.1)
-
-                await self._report_observed(
-                    profile_id, runtime_instance_id, "running", config_version
-                )
-                # Startup does not clear persistent failure history.
-
-                session = ActiveSession(
-                    profile_id=profile_id,
-                    runtime_instance_id=runtime_instance_id,
-                    config_version=config_version,
-                    udp_mux_port=port,
-                    browser_container_id=b_container.id,
-                    stream_container_id=s_container.id,
-                    desired_state="running",
-                    observed_state="running",
-                )
-                self._sessions[profile_id] = session
-                self._registration[profile_id] = RegistrationState(known=True)
-                self._update_transport(
-                    profile_id,
-                    runtime_instance_id=runtime_instance_id,
-                    browser_state="running",
-                    stream_state="running",
-                    transport_state="ready",
-                    config_version=config_version,
-                    protocol_version="v2",
-                    gateway_endpoint=(
-                        media_addresses.get("gateway_ip")
-                        if media_addresses
-                        else None
-                    ),
-                    last_attached_at=self._now_iso(),
-                    last_registered_at=self._now_iso(),
-                    last_error=None,
-                )
-                return session
-
-            except Exception as err:
-                failure_reason = (
-                    PROXY_CREDENTIALS_CHANGED
-                    if isinstance(err, ProxyCredentialsChangedError)
-                    else FONT_SET_UNAVAILABLE
-                    if isinstance(err, FontSetUnavailableError)
-                    else EXTENSION_UNAVAILABLE
-                    if isinstance(err, ExtensionUnavailableError)
-                    else "startup_failure"
-                )
-                logger.error(
-                    "Sandbox launch failed for %s: error_type=%s error=%s",
-                    profile_id,
-                    type(err).__name__,
-                    err,
-                )
-                await self.report_terminal_observation(
-                    profile_id,
-                    runtime_instance_id,
                     config_version,
-                    observed_state="error",
-                    reason=failure_reason,
+                    runtime_instance_id,
+                    dirs,
+                    snap_path,
+                    creds_path,
                 )
-                try:
-                    cleanup_confirmed = False
-                    try:
-                        await self.docker.teardown_profile(profile_id)
-                        cleanup_confirmed = await self._confirm_sandbox_gone(
-                            profile_id
-                        )
-                    except Exception as cleanup_exc:  # noqa: BLE001 - launch failure cleanup error logged without overriding original startup error
-                        logger.error(
-                            "Launch cleanup failed: profile=%s error_type=%s",
-                            profile_id,
-                            type(cleanup_exc).__name__,
-                        )
-                    if cleanup_confirmed:
-                        await self.ports.release(profile_id)
-                    else:
-                        logger.warning(
-                            "Launch cleanup unverified; port retained pending "
-                            "cleanup: profile=%s",
-                            profile_id,
-                        )
-                finally:
-                    await self.events.emit_event(
-                        event_id=f"startup_failure:{runtime_instance_id}",
-                        profile_id=profile_id,
-                        runtime_instance_id=runtime_instance_id,
-                        event_type="exit",
-                        exit_code=1,
-                        exit_reason="startup_failure",
-                        config_version=config_version,
+                port, media_addresses, browser, stream = (
+                    await self._launch_runtime_containers(
+                        profile_id,
+                        config_version,
+                        runtime_instance_id,
+                        dirs,
+                        snap_path,
                     )
+                )
+                return self._commit_started_session(
+                    profile_id,
+                    config_version,
+                    runtime_instance_id,
+                    port,
+                    media_addresses,
+                    browser,
+                    stream,
+                )
+            except Exception as err:
+                await self._handle_start_failure(
+                    profile_id, runtime_instance_id, config_version, err
+                )
                 raise
+
+    def _start_session_precheck(
+        self, profile_id: str
+    ) -> tuple[ActiveSession | None, ActiveSession | None]:
+        if profile_id not in self._sessions:
+            return None, None
+        session = self._sessions[profile_id]
+        if session.observed_state == "running":
+            logger.info(
+                "Profile already active: profile=%s instance=%s",
+                profile_id,
+                session.runtime_instance_id,
+            )
+            return session, None
+        if (
+            session.observed_state == "stopped"
+            and session.desired_state == "stopped"
+        ):
+            return None, session
+        raise LifecycleConflictError(
+            "Existing runtime must finish cleanup before a new start"
+        )
+
+    async def _assert_start_intent(
+        self, profile_id: str, force: bool, operation_id: str | None
+    ) -> None:
+        if force:
+            if not operation_id:
+                raise ValueError("Manual retry requires an idempotent operation ID")
+            await self.reset_blocked(profile_id, operation_id)
+        runtime = await self._state_entry(profile_id)
+        if runtime is None:
+            raise LifecycleConflictError("API runtime state is unavailable")
+        if runtime["desired_state"] != "running":
+            raise LifecycleConflictError(
+                "API running intent is required before starting a runtime"
+            )
+        if runtime["restart_blocked"]:
+            raise LifecycleConflictError(
+                "Automatic retries exhausted; manual retry required"
+            )
+
+    async def _bind_runtime_instance(
+        self, profile_id: str, runtime_instance_id: str, config_version: int
+    ) -> None:
+        try:
+            bind_resp = await self.api.post(
+                f"/api/v1/internal/supervisor/runtimes/bind?profile_id={quote(profile_id, safe='')}",
+                headers=self._auth_headers(),
+                json={
+                    "runtime_instance_id": runtime_instance_id,
+                    "config_version": config_version,
+                },
+            )
+            if bind_resp.status_code != 200:
+                raise RuntimeError(
+                    f"API instance binding failed: status={bind_resp.status_code}"
+                )
+            self.state_cache.note_local_write()
+        except Exception as e:
+            logger.error("Instance binding failed: error_type=%s", type(e).__name__)
+            raise
+
+    async def _prepare_start_artifacts(
+        self,
+        profile_id: str,
+        config: ProfileConfig,
+        config_version: int,
+        runtime_instance_id: str,
+        dirs: dict[str, Path],
+        snap_path: Path,
+        creds_path: Path,
+    ) -> None:
+        self._validate_font_set(
+            config,
+            runtime_instance_id,
+            profile_id=profile_id,
+            config_version=config_version,
+        )
+        self._validate_extensions(
+            config,
+            runtime_instance_id,
+            profile_id=profile_id,
+            config_version=config_version,
+        )
+        proxy_credentials = await self._resolve_proxy_credentials(
+            profile_id, config, config_version
+        )
+        snapshot = ConfigVersionSnapshot(
+            id=f"snap_{uuid.uuid4().hex[:12]}",
+            profile_id=profile_id,
+            version=config_version,
+            config=config.model_dump(),
+            proxy_credential_revision=(
+                proxy_credentials["proxy_credential_revision"]
+                if proxy_credentials is not None
+                else None
+            ),
+            created_at=datetime.now(UTC).isoformat(),
+        )
+        self._write_runtime_snapshot(snap_path, snapshot)
+        (dirs["runtime"] / PROXY_CREDENTIALS_FILENAME).unlink(missing_ok=True)
+        if proxy_credentials is not None:
+            self._write_proxy_credentials(
+                creds_path,
+                {
+                    "scheme": proxy_credentials["scheme"],
+                    "host": proxy_credentials["host"],
+                    "port": proxy_credentials["port"],
+                    "username": proxy_credentials["username"],
+                    "password": proxy_credentials["password"],
+                    "credential_revision": proxy_credentials[
+                        "credential_revision"
+                    ],
+                },
+            )
+        else:
+            creds_path.unlink(missing_ok=True)
+
+    async def _launch_runtime_containers(
+        self,
+        profile_id: str,
+        config_version: int,
+        runtime_instance_id: str,
+        dirs: dict[str, Path],
+        snap_path: Path,
+    ) -> tuple[int, dict[str, Any] | None, Any, Any]:
+        port = await self.ports.allocate(profile_id)
+        await self.docker.create_profile_network(profile_id)
+        media_addresses: dict[str, Any] | None = None
+        resolved_gateway = await asyncio.to_thread(self._resolve_gateway_id)
+        if resolved_gateway:
+            media_addresses = await asyncio.to_thread(
+                self.docker.attach_profile_infrastructure,
+                profile_id,
+                resolved_gateway,
+                gateway_port=self.gateway_endpoint.port,
+            )
+        await self._report_observed(
+            profile_id, runtime_instance_id, "starting", config_version
+        )
+        browser = await self.docker.start_browser_container(
+            profile_id=profile_id,
+            runtime_instance_id=runtime_instance_id,
+            snapshot_json_path=snap_path,
+        )
+        for _ in range(150):
+            if browser_runtime_ready(
+                dirs["runtime"], profile_id, runtime_instance_id, config_version
+            ):
+                break
+            await asyncio.sleep(0.2)
+        if not browser_runtime_ready(
+            dirs["runtime"], profile_id, runtime_instance_id, config_version
+        ):
+            raise DockerSandboxError(
+                "Timed out waiting for current Browser instance readiness"
+            )
+
+        (dirs["runtime"] / "agent_secret.txt").unlink(missing_ok=True)
+        agent_secret, selkies_tokens_file = self._prepare_stream_secrets(
+            profile_id,
+            runtime_instance_id,
+            overwrite_agent_secret=True,
+        )
+        stream = await self.docker.start_stream_container(
+            profile_id=profile_id,
+            runtime_instance_id=runtime_instance_id,
+            browser_container_name=browser.name,
+            udp_mux_port=port,
+            gateway_url=(
+                media_addresses.get("gateway_url") if media_addresses else None
+            )
+            or self.gateway_url,
+            agent_secret_path=agent_secret,
+            selkies_tokens_path=selkies_tokens_file,
+            snapshot_json_path=snap_path,
+            gateway_port=self.gateway_endpoint.port,
+        )
+        if self.gateway_control is None:
+            raise RuntimeError("Gateway control RPC is required for readiness")
+        async with asyncio.timeout(15):
+            while True:
+                await asyncio.to_thread(stream.reload)
+                if stream.status != "running":
+                    raise DockerSandboxError("Stream exited before registration")
+                try:
+                    await self.gateway_control.has_foreground_viewers(
+                        profile_id, runtime_instance_id
+                    )
+                    break
+                except httpx.HTTPStatusError as exc:
+                    if exc.response.status_code != 503:
+                        raise
+                except httpx.TransportError:
+                    pass
+                await asyncio.sleep(0.1)
+        await self._report_observed(
+            profile_id, runtime_instance_id, "running", config_version
+        )
+        return port, media_addresses, browser, stream
+
+    def _commit_started_session(
+        self,
+        profile_id: str,
+        config_version: int,
+        runtime_instance_id: str,
+        port: int,
+        media_addresses: dict[str, Any] | None,
+        browser: Any,
+        stream: Any,
+    ) -> ActiveSession:
+        session = ActiveSession(
+            profile_id=profile_id,
+            runtime_instance_id=runtime_instance_id,
+            config_version=config_version,
+            udp_mux_port=port,
+            browser_container_id=browser.id,
+            stream_container_id=stream.id,
+            desired_state="running",
+            observed_state="running",
+        )
+        self._sessions[profile_id] = session
+        self._registration[profile_id] = RegistrationState(known=True)
+        self._update_transport(
+            profile_id,
+            runtime_instance_id=runtime_instance_id,
+            browser_state="running",
+            stream_state="running",
+            transport_state="ready",
+            config_version=config_version,
+            protocol_version="v2",
+            gateway_endpoint=(
+                media_addresses.get("gateway_ip") if media_addresses else None
+            ),
+            last_attached_at=self._now_iso(),
+            last_registered_at=self._now_iso(),
+            last_error=None,
+        )
+        return session
+
+    @staticmethod
+    def _start_failure_reason(err: Exception) -> str:
+        if isinstance(err, ProxyCredentialsChangedError):
+            return PROXY_CREDENTIALS_CHANGED
+        if isinstance(err, FontSetUnavailableError):
+            return FONT_SET_UNAVAILABLE
+        if isinstance(err, ExtensionUnavailableError):
+            return EXTENSION_UNAVAILABLE
+        return "startup_failure"
+
+    async def _handle_start_failure(
+        self,
+        profile_id: str,
+        runtime_instance_id: str,
+        config_version: int,
+        err: Exception,
+    ) -> None:
+        logger.error(
+            "Sandbox launch failed for %s: error_type=%s error=%s",
+            profile_id,
+            type(err).__name__,
+            err,
+        )
+        await self.report_terminal_observation(
+            profile_id,
+            runtime_instance_id,
+            config_version,
+            observed_state="error",
+            reason=self._start_failure_reason(err),
+        )
+        try:
+            cleanup_confirmed = False
+            try:
+                await self.docker.teardown_profile(profile_id)
+                cleanup_confirmed = await self._confirm_sandbox_gone(profile_id)
+            except Exception as cleanup_exc:  # noqa: BLE001 - launch failure cleanup error logged without overriding original startup error
+                logger.error(
+                    "Launch cleanup failed: profile=%s error_type=%s",
+                    profile_id,
+                    type(cleanup_exc).__name__,
+                )
+            if cleanup_confirmed:
+                await self.ports.release(profile_id)
+            else:
+                logger.warning(
+                    "Launch cleanup unverified; port retained pending "
+                    "cleanup: profile=%s",
+                    profile_id,
+                )
+        finally:
+            await self.events.emit_event(
+                event_id=f"startup_failure:{runtime_instance_id}",
+                profile_id=profile_id,
+                runtime_instance_id=runtime_instance_id,
+                event_type="exit",
+                exit_code=1,
+                exit_reason="startup_failure",
+                config_version=config_version,
+            )
 
     async def stop_profile(
         self,
