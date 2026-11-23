@@ -1,13 +1,16 @@
 ---
 pid: "p168"
 slug: "proxy_probe_results_expire_silently"
-status: "todo"
+status: "closed"
+resolution: "transferred"
+reason: "已核实根因与范围并转交该 task"
+fix_ref: "t105"
 ---
 # p168 代理测速结果 24 小时后静默失效：用户感知为「重启后测速结果没了」
 
 - 来源：用户 2026-11-23 截图反馈「似乎重启一下这些测速结果就没了」。截图（代理列表 88 条）状态列几乎全是「未测速」，仅 4 条显示「经代理无响应」。bug-to-pending 分析登记，未在本次分析修改生产代码。
 - 现象：
-    - 现场库（`cbrowser-db` 命名卷，`/data/db/cbrowser.db`）中 88 个代理的**最新观测行**为 84 条 `ok` + 4 条 `failed`。84 条 `ok` 中 77 条 `expires_at` 已过（最近一次批量测速为 2026-11-20T15:31Z，24h TTL 在 2026-11-21T15:31Z 到期；另 7 条 2026-11-22T05:14Z 的观测到 2026-11-23T05:14Z 才到期）。4 条 `failed`（`echo_unreachable`，无 `expires_at`）无一年 expire，始终可见——与截图「4 条经代理无响应、其余未测速」逐行吻合。
+    - 现场库（`cbrowser-db` 命名卷，`/data/db/cbrowser.db`）中 88 个代理的**最新观测行**为 84 条 `ok` + 4 条 `failed`。84 条 `ok` 中 77 条 `expires_at` 已过（最近一次批量测速为 2026-11-20T15:31Z，24h TTL 在 2026-11-21T15:31Z 到期；另 7 条 2026-11-22T05:14Z 的观测到 2026-11-23T05:14Z 才到期）。4 条 `failed`（`echo_unreachable`，无 `expires_at`）无过期时间，始终可见——与截图「4 条经代理无响应、其余未测速」逐行吻合。
     - 用生产 `ProfileRepository` 对库快照做受控时间复现：同一行「马来西亚标准 IEPL 专线 1」在 2026-11-20T16:00Z 返回 `status=ok, latency_ms=619`，在 2026-11-23T03:00Z 返回 `status=unknown, latency_ms=None`（UI 即「未测速」）；同一时刻 `failed` 行仍返回 `status=failed, error_code=echo_unreachable`。
     - **重启本身不丢数据**：全仓无启动期 `DELETE FROM proxy_egress_observations`，DB 在命名卷上；`app.py:384` 启动只 `resume_pending_probe_jobs()` 重启在途作业，不清空观测。用户把「TTL 到期」归因为「重启导致」，因重启与该状态变化相隔约 49 分钟且用户此前未刷新观察。
 - 影响：
@@ -29,4 +32,4 @@ status: "todo"
 - 线索：
     - `.scratch/repro_probe_result_after_restart/repro.py`（生产 `ProfileRepository` + DB 快照 + 注入冻结时间，直接输出 `ok→unknown`、`failed` 不变）；库快照 `.scratch/repro_probe_result_after_restart/cbrowser.db`；运行命令 `.venv/bin/python .scratch/repro_probe_result_after_restart/repro.py`。
     - 现场证据：`docker run --rm -v cbrowser-db:/db python:3.12-alpine python3 -c "..."` 查 `proxy_egress_observations` 最新行与 `expires_at`；截图对应 21065–21087 端口代理逐行状态与 DB 完全吻合。
-- 处理：用户 2026-11-23 裁决按 spec 补过期自动重测（保留 TTL，由服务端按预算自动重测刷新），并同意立项；未修改生产代码。修复方向已定，不再保留备选方案。
+- 处理：t105；resolution=transferred；reason=已核实根因与范围并转交该 task
