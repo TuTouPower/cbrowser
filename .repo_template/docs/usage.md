@@ -111,7 +111,7 @@ Git 原生 integrate 的内容校验依赖 `git merge-tree --write-tree --name-o
 
 ## workflow 示例
 
-`/task-create` → `/task-schedule` → `task.py plan`（本波链）/ `view --serve` → 一个或多个会话 `/task-run`（多会话手动并发各跑一段；状态变后重跑 `plan` 得下一批）。单个 task 的 `/task-run` 主路径只传 `tid` 与 `owner_id`：主仓 `run-begin` → worktree 内 `preflight` / `render_review_prompts.py` / `task.py review-status` / `finish` → 主仓 `run-close --result done`；merge 经授权后 `integrate {tid}` 与 `integrate {tid} --continue`。阻塞或失败用 `run-close --result blocked|failed`；`recovery` 与原语子命令只在恢复时使用。goal 模式自治跑队列：先 `task.py goal` 冻结队列并粘贴其输出的 `/goal` 行，终态以 `task.py goal-check` marker 判定。
+`/task-create` → `/task-schedule` → `task.py plan`（本波链）/ `view --serve` → 一个或多个会话 `/task-run`（多会话手动并发各跑一段；状态变后重跑 `plan` 得下一批）。单个 task 的 `/task-run` 主路径只传 `tid` 与 `owner_id`：主仓 `run-begin` → `render_review_prompts.py --tid {tid}`（位置由状态机裁决，主仓或 worktree 均可调用，只读 active task 的登记 worktree）/ worktree 内 `preflight` / `task.py review-status` / `finish` → 主仓 `run-close --result done`；merge 经授权后 `integrate {tid}` 与 `integrate {tid} --continue`。阻塞或失败用 `run-close --result blocked|failed`；`recovery` 与原语子命令只在恢复时使用。goal 模式自治跑队列：先 `task.py goal` 冻结队列并粘贴其输出的 `/goal` 行，终态以 `task.py goal-check` marker 判定。
 
 `/task-integrate` 是公开入口：无参运行 `task.py integrate` 只列待合单体/链尾候选并等待授权；显式 tid 用 `integrate {tid}`，多成员链用 `integrate-chain {tail_tid}`，只授权该范围。`/task-combine` 合并范围重叠或拆得过细的 backlog task；未点名时只提出候选等待确认，不自行决定合并范围。两者都不自动执行 Git merge、不 push；`task-combine` 的 backlog 图改写只在用户确认来源范围后执行。
 
@@ -153,6 +153,8 @@ python3 .repo_template/scripts/repo_state.py --help  # 完整工作树 vs baseli
 ## 附属生命周期闭环
 
 pending 闭环必须提供非空 `--reason`，说明处理结果、验证依据或转办/去重去向；`--fix-ref` 可选，不要求 task ID，可记录 main、commit、PR、条目或 task。默认 resolution=resolved；转办显式用 `--resolution transferred`，其他类型为 obsolete/duplicate，所有类型均只强制备注，不强制引用。存在 task 时保留 pNNN 与 tid 双向关联；直接在 main 完成时如实写备注，不伪造 task ID。小而低风险的 pending 经用户授权后由 `pending-fix` 在 main 直修，准入与流程见该 skill。
+
+closed 条目的引用变更时，使用 `python3 .repo_template/scripts/pending.py update-ref p001 --fix-ref t086 --reason "原 task 已 drop，转交新 task" --write`。命令保留原闭环记录，在正文追加引用变更及原因；默认 dry-run。关联 task 的来源记录需同步维护。
 
 ```bash
 python3 .repo_template/scripts/pending.py close p001 --reason "按用户要求在 main 修复；专项测试通过" --write
