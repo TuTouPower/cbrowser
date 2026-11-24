@@ -742,6 +742,68 @@ class ProfileService:
     async def font_set_usage_counts(self) -> dict[tuple[str, str], int]:
         return await self._repo.font_set_usage_counts()
 
+    @staticmethod
+    def _patch_dict(patch_data: dict[str, Any] | ProfileConfig) -> dict[str, Any]:
+        return (
+            patch_data.model_dump()
+            if isinstance(patch_data, ProfileConfig)
+            else dict(patch_data)
+        )
+
+    async def _resolve_platform_binding(
+        self,
+        current: Profile,
+        patch_dict: dict[str, Any],
+        patch_data: dict[str, Any] | ProfileConfig,
+    ) -> tuple[dict[str, Any], dict[str, Any] | ProfileConfig]:
+        platform = patch_dict.get(
+            "fingerprint_platform", current.config.fingerprint_platform
+        )
+        if platform != current.config.fingerprint_platform:
+            if self.font_catalog().root_configured():
+                default = await self.font_catalog().default_set_id(platform)
+                if default is None:
+                    raise InvalidFontSetBindingError(
+                        f"no available {platform} font set; import and "
+                        "verify a font set for the platform first"
+                    )
+            else:
+                default = None
+            patch_dict["font_set_id"] = default
+            if isinstance(patch_data, ProfileConfig):
+                patch_data = patch_data.model_copy(
+                    update={"font_set_id": default}
+                )
+            if default is not None:
+                await self._validate_font_set_binding(platform, default)
+        elif patch_dict.get(
+            "font_set_id", current.config.font_set_id
+        ) != current.config.font_set_id:
+            await self._validate_font_set_binding(
+                platform, patch_dict.get("font_set_id")
+            )
+        return patch_dict, patch_data
+
+    async def _validate_patch_references(self, patch_dict: dict[str, Any]) -> None:
+        if "group_id" in patch_dict or "proxy_id" in patch_dict:
+            await self._validate_references(
+                patch_dict.get("group_id"), patch_dict.get("proxy_id")
+            )
+
+    async def _validate_patch_extensions(
+        self, current: Profile | None, patch_dict: dict[str, Any]
+    ) -> None:
+        if "extension_ids" not in patch_dict and patch_dict.get(
+            "allow_extensions"
+        ) is not True:
+            return
+        ext_ids = (
+            patch_dict.get("extension_ids")
+            if "extension_ids" in patch_dict
+            else current.config.extension_ids  # type: ignore[union-attr]
+        )
+        await self._validate_extensions(ext_ids)
+
     async def update_profile(
         self,
         profile_id: str,
@@ -749,11 +811,7 @@ class ProfileService:
         *,
         operation_id: str | None = None,
     ) -> Profile:
-        patch_dict = (
-            patch_data.model_dump()
-            if isinstance(patch_data, ProfileConfig)
-            else dict(patch_data)
-        )
+        patch_dict = self._patch_dict(patch_data)
         needs_platform_check = (
             "fingerprint_platform" in patch_dict or "font_set_id" in patch_dict
         )
@@ -768,61 +826,12 @@ class ProfileService:
                 raise ProfileNotFoundError(profile_id)
         if needs_platform_check:
             assert current is not None
-            platform = patch_dict.get(
-                "fingerprint_platform", current.config.fingerprint_platform
+            patch_dict, patch_data = await self._resolve_platform_binding(
+                current, patch_dict, patch_data
             )
-            if platform != current.config.fingerprint_platform:
-                # t075: switching platform rebinds the profile to
-                # the new platform's catalog default set.  With a
-                # font root configured, the switch fails before
-                # anything is written when the target platform has
-                # no verified set, so a profile can never land on a
-                # platform whose fonts it cannot use.  With no font
-                # root configured (font subsystem out of scope for
-                # the process), the stale cross-platform binding is
-                # dropped instead.
-                if self.font_catalog().root_configured():
-                    default = await self.font_catalog().default_set_id(
-                        platform
-                    )
-                    if default is None:
-                        raise InvalidFontSetBindingError(
-                            f"no available {platform} font set; import and "
-                            "verify a font set for the platform first"
-                        )
-                else:
-                    default = None
-                patch_dict["font_set_id"] = default
-                if isinstance(patch_data, ProfileConfig):
-                    patch_data = patch_data.model_copy(
-                        update={"font_set_id": default}
-                    )
-                if default is not None:
-                    await self._validate_font_set_binding(platform, default)
-            elif patch_dict.get(
-                "font_set_id", current.config.font_set_id
-            ) != current.config.font_set_id:
-                await self._validate_font_set_binding(
-                    platform, patch_dict.get("font_set_id")
-                )
-        # t056 A28: only keys present in the patch are validated; an
-        # explicit null clears the reference and needs no lookup.
-        if "group_id" in patch_dict or "proxy_id" in patch_dict:
-            await self._validate_references(
-                patch_dict.get("group_id"), patch_dict.get("proxy_id")
-            )
-        if "extension_ids" in patch_dict or patch_dict.get("allow_extensions") is True:
-            ext_ids = (
-                patch_dict.get("extension_ids")
-                if "extension_ids" in patch_dict
-                else current.config.extension_ids  # type: ignore[union-attr]
-            )
-            await self._validate_extensions(ext_ids)
+        await self._validate_patch_references(patch_dict)
+        await self._validate_patch_extensions(current, patch_dict)
         if not isinstance(patch_data, ProfileConfig):
-            # The font-binding branch above may have rewritten
-            # patch_dict (platform-switch rebind); a dict patch must
-            # reach the repository in that enriched form, not as the
-            # caller's original dict.
             patch_data = patch_dict
         try:
             profile = await self._repo.update_profile(

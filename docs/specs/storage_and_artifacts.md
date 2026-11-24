@@ -1,7 +1,7 @@
 ---
 slug: storage_and_artifacts
 status: active
-tasks: [baseline, t078, t080, t089, t104]
+tasks: [baseline, t078, t080, t089, t104, t107]
 ---
 # 需求规范：数据持久化、迁移与文件交换 (storage_and_artifacts)
 

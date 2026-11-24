@@ -290,6 +290,55 @@ def _inspect_legacy_directory(
     }, None
 
 
+def _same_identity_assets(
+    catalog: dict[str, TrustedManagedExtension],
+    cid: str,
+    key_sha: str,
+    version: str,
+) -> list[TrustedManagedExtension]:
+    return [
+        asset
+        for asset in catalog.values()
+        if asset.chromium_id == cid
+        and asset.manifest_key_sha256 == key_sha
+        and asset.version == version
+    ]
+
+
+def _core_matching_assets(
+    assets: list[TrustedManagedExtension], core_hashes: Any
+) -> list[TrustedManagedExtension]:
+    return [a for a in assets if a.normalized_core_hashes == core_hashes]
+
+
+def _classify_managed_candidates(
+    info: dict[str, Any], catalog: dict[str, TrustedManagedExtension]
+) -> tuple[str, list[TrustedManagedExtension], list[TrustedManagedExtension]]:
+    """Pure identity classification, independent of path/message formatting."""
+    cid = str(info["chromium_id"])
+    key_sha = str(info["key_sha256"])
+    ver = str(info["version"])
+    same_identity = _same_identity_assets(catalog, cid, key_sha, ver)
+    if not same_identity:
+        same_cid = [a for a in catalog.values() if a.chromium_id == cid]
+        return (
+            "ambiguous_cid" if len(same_cid) > 1 else "missing",
+            [],
+            same_cid,
+        )
+    exact = [a for a in same_identity if a.id == info["tree_sha256"]]
+    if len(exact) == 1 and len(same_identity) == 1:
+        return "exact", exact, same_identity
+    if len(exact) > 1:
+        return "ambiguous_exact", [], same_identity
+    core_matched = _core_matching_assets(same_identity, info["core_hashes"])
+    if len(core_matched) == 1:
+        return "core", core_matched, same_identity
+    if len(core_matched) > 1 or len(same_identity) > 1:
+        return "ambiguous", [], core_matched or same_identity
+    return "digest_mismatch", [], same_identity
+
+
 def _match_legacy_entry(
     raw_path: str,
     context_label: str,
@@ -300,24 +349,17 @@ def _match_legacy_entry(
     if inspect_err is not None or info is None:
         return None, None, inspect_err
 
-    cid = str(info["chromium_id"])
-    key_sha = str(info["key_sha256"])
-    ver = str(info["version"])
-
-    same_identity = [
-        asset
-        for asset in catalog.values()
-        if asset.chromium_id == cid and asset.manifest_key_sha256 == key_sha and asset.version == ver
-    ]
-    if not same_identity:
-        # Also detect ambiguous multiple versions/entries with same chromium_id
-        same_cid = [a for a in catalog.values() if a.chromium_id == cid]
-        if len(same_cid) > 1:
+    cid, ver = str(info["chromium_id"]), str(info["version"])
+    kind, matched, peers = _classify_managed_candidates(info, catalog)
+    if kind == "exact" or kind == "core":
+        return matched[0].id, cid, None
+    if kind == "missing" or kind == "ambiguous_cid":
+        if len(peers) > 1:
             return (
                 None,
                 None,
                 f"{context_label}: ambiguous managed candidates for {raw_path!r} "
-                f"(chromium_id={cid}, candidates={sorted(a.id for a in same_cid)}) (分类=歧义)",
+                f"(chromium_id={cid}, candidates={sorted(a.id for a in peers)}) (分类=歧义)",
             )
         return (
             None,
@@ -325,35 +367,24 @@ def _match_legacy_entry(
             f"{context_label}: missing verified managed asset for {raw_path!r} "
             f"(chromium_id={cid}, version={ver!r}) (分类=缺失)",
         )
-
-    exact = [a for a in same_identity if a.id == info["tree_sha256"]]
-    if len(exact) == 1 and len(same_identity) == 1:
-        return exact[0].id, cid, None
-    if len(exact) > 1:
+    if kind == "ambiguous_exact":
         return (
             None,
             None,
             f"{context_label}: ambiguous exact managed matches for {raw_path!r} (分类=歧义)",
         )
-
-    core_matched = [
-        a for a in same_identity if a.normalized_core_hashes == info["core_hashes"]
-    ]
-    if len(core_matched) == 1:
-        return core_matched[0].id, cid, None
-    if len(core_matched) > 1 or len(same_identity) > 1:
+    if kind == "ambiguous":
         return (
             None,
             None,
             f"{context_label}: ambiguous managed assets matching {raw_path!r} "
-            f"(chromium_id={cid}, version={ver!r}, matches={len(core_matched or same_identity)}) (分类=歧义)",
+            f"(chromium_id={cid}, version={ver!r}, matches={len(peers)}) (分类=歧义)",
         )
     return (
         None,
         None,
         f"{context_label}: artifact digest mismatch against managed asset for {raw_path!r} (分类=缺失)",
     )
-
 
 def _resolve_extension_list(
     raw_paths: Any,
